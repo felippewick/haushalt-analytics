@@ -12,6 +12,8 @@ export type BuiltinCategoryId =
   | 'shopping'
   | 'gifts'
   | 'salary'
+  | 'refunds'
+  | 'sales'
   | 'transfer'
   | 'atm'
   | 'entertainment'
@@ -93,7 +95,7 @@ export interface Transaction {
   importId?: string
 }
 
-export type ImportSource = 'dkb' | 'trade_republic'
+export type ImportSource = 'dkb' | 'trade_republic' | 'generic'
 
 export interface ImportBatch {
   id: string

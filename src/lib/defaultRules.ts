@@ -1,4 +1,4 @@
-import type { BuiltinCategoryId, Category, CategoryId, CategoryRule } from './types'
+import type { BuiltinCategoryId, Category, CategoryRule } from './types'
 
 export const CATEGORIES: Category[] = [
   { id: 'groceries', label: 'Groceries', color: '#22c55e' },
@@ -31,6 +31,8 @@ export const CATEGORIES: Category[] = [
   },
   { id: 'atm', label: 'ATM / Cash', color: '#78716c' },
   { id: 'salary', label: 'Salary', color: '#10b981', isIncome: true },
+  { id: 'refunds', label: 'Refunds', color: '#2dd4bf', isIncome: true },
+  { id: 'sales', label: 'Sales', color: '#16a34a', isIncome: true },
   {
     id: 'transfer',
     label: 'Transfer',

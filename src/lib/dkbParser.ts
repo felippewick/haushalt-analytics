@@ -31,6 +31,11 @@ function normalizeText(raw: string): string {
   return raw.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n')
 }
 
+/** True when the text contains the DKB Girokonto header row. */
+export function isDkbCsv(rawText: string): boolean {
+  return findHeaderLineIndex(normalizeText(rawText).split('\n')) >= 0
+}
+
 /**
  * Try UTF-8 first; if we see typical mojibake / replacement chars around
  * German umlauts in the header area, fall back to ISO-8859-1.

@@ -5,6 +5,7 @@ import { syncCategoryRegistry } from '../lib/categories'
 import {
   emptyStore,
   importCsvFile,
+  importGenericCsv,
   loadStore,
   saveStore,
   setTransactionCategory,
@@ -15,6 +16,7 @@ import {
   reassignImport,
   addAccountByIban,
   addCategory,
+  type GenericImportInput,
   updateCategoryDefinition,
   deleteCategory,
   resetCategories,
@@ -89,6 +91,23 @@ export function useAppStore() {
     try {
       const { store: next, result } = await importCsvFile(
         file,
+        storeRef.current,
+      )
+      setStore(next)
+      setLastImport(result)
+      return result
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'error.importFailed'
+      setError(msg)
+      throw e
+    }
+  }, [])
+
+  const doImportGeneric = useCallback(async (input: GenericImportInput) => {
+    setError(null)
+    try {
+      const { store: next, result } = importGenericCsv(
+        input,
         storeRef.current,
       )
       setStore(next)
@@ -187,6 +206,7 @@ export function useAppStore() {
     lastImport,
     setLastImport,
     importFile: doImport,
+    importGenericFile: doImportGeneric,
     updateCategory,
     addManual,
     removeTransaction,

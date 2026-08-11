@@ -19,6 +19,7 @@ import {
 import { transactionFlow } from '../lib/categorize'
 import { CategorySelect } from './CategorySelect'
 import { useLocale } from '../hooks/useLocale'
+import { CHART_THEMES, useTheme } from '../hooks/useTheme'
 
 export const MONTH_TX_LIST_ID = 'month-transactions'
 
@@ -52,6 +53,15 @@ export function Dashboard({
     formatMonthLabel,
     formatEur,
   } = useLocale()
+  const { resolved } = useTheme()
+  const chart = CHART_THEMES[resolved]
+  const pieTooltipStyle = {
+    background: chart.tooltipBg,
+    border: `1px solid ${chart.tooltipBorder}`,
+    borderRadius: 8,
+    fontSize: 12,
+    color: chart.tooltipText,
+  }
   const [query, setQuery] = useState('')
   const [categoryFilter, setCategoryFilter] = useState<CategoryId | 'all'>('all')
   const [flowFilter, setFlowFilter] = useState<FlowFilter>('all')
@@ -289,7 +299,11 @@ export function Dashboard({
                       paddingAngle={2}
                     >
                       {expenseChart.map((entry) => (
-                        <Cell key={entry.name} fill={entry.color} />
+                        <Cell
+                          key={entry.name}
+                          fill={entry.color}
+                          stroke={chart.pieStroke}
+                        />
                       ))}
                     </Pie>
                     <Tooltip
@@ -298,8 +312,12 @@ export function Dashboard({
                           typeof value === 'number' ? value : Number(value),
                         )
                       }
+                      contentStyle={pieTooltipStyle}
+                      itemStyle={{ color: chart.tooltipText }}
                     />
-                    <Legend />
+                    <Legend
+                      wrapperStyle={{ fontSize: 12, color: chart.legend }}
+                    />
                   </PieChart>
                 </ResponsiveContainer>
               )}
@@ -326,7 +344,11 @@ export function Dashboard({
                       paddingAngle={2}
                     >
                       {incomeChart.map((entry) => (
-                        <Cell key={entry.name} fill={entry.color} />
+                        <Cell
+                          key={entry.name}
+                          fill={entry.color}
+                          stroke={chart.pieStroke}
+                        />
                       ))}
                     </Pie>
                     <Tooltip
@@ -335,8 +357,12 @@ export function Dashboard({
                           typeof value === 'number' ? value : Number(value),
                         )
                       }
+                      contentStyle={pieTooltipStyle}
+                      itemStyle={{ color: chart.tooltipText }}
                     />
-                    <Legend />
+                    <Legend
+                      wrapperStyle={{ fontSize: 12, color: chart.legend }}
+                    />
                   </PieChart>
                 </ResponsiveContainer>
               )}

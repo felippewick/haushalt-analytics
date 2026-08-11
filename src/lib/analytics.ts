@@ -5,6 +5,7 @@ import {
   endOfMonth,
   isWithinInterval,
   subMonths,
+  addMonths,
 } from 'date-fns'
 import type { Account, CategoryId, Transaction } from './types'
 import { getCategories, getCategoryMap } from './categories'
@@ -13,7 +14,16 @@ import {
   transactionFlow,
   type TransactionFlow,
 } from './categorize'
-import { accountLabel, accountOptionLabel } from './store'
+import {
+  accountLabel,
+  accountOptionLabel,
+  MANUAL_ACCOUNT_ID,
+} from './store'
+
+export interface MonthRange {
+  from: string
+  to: string
+}
 
 export type FlowFilter = 'all' | TransactionFlow
 
@@ -162,31 +172,88 @@ export function availableMonths(transactions: Transaction[]): string[] {
   return [...set].sort().reverse()
 }
 
-/** Months shown in the trends chart window (always contiguous). */
-export function trendWindowMonths(
-  transactions: Transaction[],
-  monthsBack = 6,
-): string[] {
-  const latest = availableMonths(transactions)[0]
-  if (!latest) return []
-  const end = parseISO(`${latest}-01`)
+export function compareMonths(a: string, b: string): number {
+  return a.localeCompare(b)
+}
+
+/** Contiguous ascending YYYY-MM months from `from` through `to` inclusive. */
+export function monthsInRange(from: string, to: string): string[] {
+  if (compareMonths(from, to) > 0) return []
   const months: string[] = []
-  for (let i = 0; i < monthsBack; i++) {
-    months.push(format(subMonths(end, i), 'yyyy-MM'))
+  let cur = parseISO(`${from}-01`)
+  const end = parseISO(`${to}-01`)
+  while (cur <= end) {
+    months.push(format(cur, 'yyyy-MM'))
+    cur = addMonths(cur, 1)
   }
   return months
 }
 
-/** Union of data months + chart window, newest first — for month pickers. */
-export function selectableMonths(
+/** Earliest and latest month keys present in the transactions (by booking date). */
+export function dataMonthSpan(
   transactions: Transaction[],
-  monthsBack = 6,
-): string[] {
-  const set = new Set([
-    ...availableMonths(transactions),
-    ...trendWindowMonths(transactions, monthsBack),
-  ])
-  return [...set].sort().reverse()
+): MonthRange | null {
+  const months = availableMonths(transactions)
+  if (months.length === 0) return null
+  return { from: months[months.length - 1]!, to: months[0]! }
+}
+
+export function rangesOverlap(a: MonthRange, b: MonthRange): boolean {
+  return (
+    compareMonths(a.from, b.to) <= 0 && compareMonths(b.from, a.to) <= 0
+  )
+}
+
+/**
+ * Default chart window ending at the latest data month:
+ * last 12 months if history spans ≥12, else 9, else 6, else the full span.
+ */
+export function defaultMonthRange(
+  transactions: Transaction[],
+): MonthRange | null {
+  const span = dataMonthSpan(transactions)
+  if (!span) return null
+  const spanLen = monthsInRange(span.from, span.to).length
+  const window =
+    spanLen >= 12 ? 12 : spanLen >= 9 ? 9 : spanLen >= 6 ? 6 : spanLen
+  const from = format(
+    subMonths(parseISO(`${span.to}-01`), window - 1),
+    'yyyy-MM',
+  )
+  return {
+    from: compareMonths(from, span.from) < 0 ? span.from : from,
+    to: span.to,
+  }
+}
+
+/** Clamp a range into the data span; swaps inverted from/to. */
+export function clampRangeToData(
+  range: MonthRange,
+  transactions: Transaction[],
+): MonthRange | null {
+  const span = dataMonthSpan(transactions)
+  if (!span) return null
+  let from = range.from
+  let to = range.to
+  if (compareMonths(from, to) > 0) {
+    ;[from, to] = [to, from]
+  }
+  if (compareMonths(from, span.from) < 0) from = span.from
+  if (compareMonths(to, span.to) > 0) to = span.to
+  if (compareMonths(from, to) > 0) return span
+  return { from, to }
+}
+
+/** Contiguous months from data min→max, newest first — for month pickers. */
+export function selectableMonths(transactions: Transaction[]): string[] {
+  const span = dataMonthSpan(transactions)
+  if (!span) return []
+  return monthsInRange(span.from, span.to).reverse()
+}
+
+/** Months shown in the trends chart window (always contiguous). */
+export function trendWindowMonths(range: MonthRange): string[] {
+  return monthsInRange(range.from, range.to)
 }
 
 export function filterByMonth(
@@ -198,6 +265,65 @@ export function filterByMonth(
   return transactions.filter((t) =>
     isWithinInterval(parseISO(t.date), { start, end }),
   )
+}
+
+export interface MonthCoverage {
+  month: string
+  hasAnyTx: boolean
+  missingAccountIds: string[]
+  gap: boolean
+}
+
+/**
+ * Per-month account coverage inside a range.
+ * Manual account is ignored; only bank accounts in `accounts` that appear in
+ * `transactions` (already account-filtered) are checked.
+ */
+export function accountCoverageGaps(
+  transactions: Transaction[],
+  accounts: Account[],
+  range: MonthRange,
+): MonthCoverage[] {
+  const bankIds = accounts
+    .filter((a) => a.id !== MANUAL_ACCOUNT_ID)
+    .map((a) => a.id)
+  const present = new Set(
+    transactions
+      .filter((t) => t.origin !== 'manual')
+      .map((t) => t.accountId),
+  )
+  const relevant = bankIds.filter((id) => present.has(id))
+  const months = monthsInRange(range.from, range.to)
+  if (relevant.length === 0) {
+    return months.map((month) => ({
+      month,
+      hasAnyTx: filterByMonth(transactions, month).length > 0,
+      missingAccountIds: [],
+      gap: false,
+    }))
+  }
+
+  const byAccountMonth = new Set<string>()
+  for (const tx of transactions) {
+    if (tx.origin === 'manual') continue
+    if (!relevant.includes(tx.accountId)) continue
+    byAccountMonth.add(`${tx.accountId}:${monthKey(tx.date)}`)
+  }
+
+  return months.map((month) => {
+    const missingAccountIds = relevant.filter(
+      (id) => !byAccountMonth.has(`${id}:${month}`),
+    )
+    const hasAnyTx = relevant.some((id) =>
+      byAccountMonth.has(`${id}:${month}`),
+    )
+    return {
+      month,
+      hasAnyTx,
+      missingAccountIds,
+      gap: missingAccountIds.length > 0,
+    }
+  })
 }
 
 export interface MonthSummary {
@@ -300,25 +426,28 @@ export interface TrendPoint {
   month: string
   label: string
   total: number
+  /** 1 when at least one bank account has no txs this month */
+  gap: number
+  missingAccountNames: string
   [categoryId: string]: string | number
 }
 
 export function buildTrendData(
   transactions: Transaction[],
-  monthsBack = 6,
+  range: MonthRange,
   formatLabel: (yyyyMm: string) => string = (m) =>
     format(parseISO(`${m}-01`), 'MMM yy'),
+  coverage?: MonthCoverage[],
+  accountName?: (accountId: string) => string,
 ): { data: TrendPoint[]; categoryIds: CategoryId[] } {
   // Trends chart is expenses-only (no income / transfers)
   const expenseTxs = transactions.filter((t) => transactionFlow(t) === 'expense')
-  const latest = availableMonths(expenseTxs)[0] ?? availableMonths(transactions)[0]
-  if (!latest) return { data: [], categoryIds: [] }
+  const months = monthsInRange(range.from, range.to)
+  if (months.length === 0) return { data: [], categoryIds: [] }
 
-  const end = parseISO(`${latest}-01`)
-  const months: string[] = []
-  for (let i = monthsBack - 1; i >= 0; i--) {
-    months.push(format(subMonths(end, i), 'yyyy-MM'))
-  }
+  const coverageByMonth = new Map(
+    (coverage ?? []).map((c) => [c.month, c]),
+  )
 
   const map = getCategoryMap()
   const used = new Set<CategoryId>()
@@ -334,10 +463,16 @@ export function buildTrendData(
     }
 
     let total = 0
+    const cov = coverageByMonth.get(m)
+    const missingIds = cov?.missingAccountIds ?? []
     const point: TrendPoint = {
       month: m,
       label: formatLabel(m),
       total: 0,
+      gap: cov?.gap ? 1 : 0,
+      missingAccountNames: missingIds
+        .map((id) => (accountName ? accountName(id) : id))
+        .join(', '),
     }
     for (const [categoryId, spent] of catTotals) {
       const rounded = Math.round(spent * 100) / 100
@@ -376,29 +511,30 @@ export interface CategoryTrendPoint {
   amount: number
   average: number
   trend: number
+  gap: number
+  missingAccountNames: string
 }
 
 /** Monthly expense total for one category + average and linear trend line. */
 export function buildCategoryTrendData(
   transactions: Transaction[],
   categoryId: CategoryId,
-  monthsBack = 6,
+  range: MonthRange,
   formatLabel: (yyyyMm: string) => string = (m) =>
     format(parseISO(`${m}-01`), 'MMM yy'),
+  coverage?: MonthCoverage[],
+  accountName?: (accountId: string) => string,
 ): { data: CategoryTrendPoint[]; average: number } {
   const expenseTxs = transactions.filter(
     (t) =>
       transactionFlow(t) === 'expense' && t.categoryId === categoryId,
   )
-  const latest =
-    availableMonths(expenseTxs)[0] ?? availableMonths(transactions)[0]
-  if (!latest) return { data: [], average: 0 }
+  const months = monthsInRange(range.from, range.to)
+  if (months.length === 0) return { data: [], average: 0 }
 
-  const end = parseISO(`${latest}-01`)
-  const months: string[] = []
-  for (let i = monthsBack - 1; i >= 0; i--) {
-    months.push(format(subMonths(end, i), 'yyyy-MM'))
-  }
+  const coverageByMonth = new Map(
+    (coverage ?? []).map((c) => [c.month, c]),
+  )
 
   const amounts = months.map((m) => {
     const monthTx = filterByMonth(expenseTxs, m)
@@ -431,13 +567,21 @@ export function buildCategoryTrendData(
     )
   }
 
-  const data: CategoryTrendPoint[] = months.map((m, i) => ({
-    month: m,
-    label: formatLabel(m),
-    amount: amounts[i]!,
-    average,
-    trend: trendValues[i]!,
-  }))
+  const data: CategoryTrendPoint[] = months.map((m, i) => {
+    const cov = coverageByMonth.get(m)
+    const missingIds = cov?.missingAccountIds ?? []
+    return {
+      month: m,
+      label: formatLabel(m),
+      amount: amounts[i]!,
+      average,
+      trend: trendValues[i]!,
+      gap: cov?.gap ? 1 : 0,
+      missingAccountNames: missingIds
+        .map((id) => (accountName ? accountName(id) : id))
+        .join(', '),
+    }
+  })
 
   return { data, average }
 }

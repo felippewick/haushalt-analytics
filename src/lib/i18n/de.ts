@@ -16,6 +16,10 @@ export const de: Record<MessageKey, string> = {
   'app.demo.bodyAfter':
     'und lade deine eigene Bank-CSV hoch — die Beispieldaten werden ersetzt.',
   'app.mergeApplied': 'Zusammenführung übernommen und gespeichert.',
+  'app.theme.aria': 'Farbschema wechseln',
+  'app.theme.system': 'System',
+  'app.theme.light': 'Hell',
+  'app.theme.dark': 'Dunkel',
   'app.footer':
     'Deine Daten verlassen dieses Gerät nicht. Kein Internet nötig, kein Konto, keine Cloud — und kein Sync zwischen Computern.',
 
@@ -118,6 +122,10 @@ export const de: Record<MessageKey, string> = {
   'error.loadStore': 'Store konnte nicht geladen werden',
   'error.saveStore': 'Speichern fehlgeschlagen',
   'error.csvOnly': 'Bitte eine .csv-Datei ablegen.',
+  'error.unreadableCsv':
+    'Diese Datei konnte nicht als CSV-Tabelle gelesen werden — es wurden keine Spalten erkannt.',
+  'error.noMappedRows':
+    'Mit dieser Spaltenzuordnung konnten keine Zeilen importiert werden. Prüfe die Datums- und Betragsspalte.',
 
   'merge.warn.empty': 'Der importierte Store scheint leer zu sein.',
   'merge.warn.alreadyPresent':
@@ -148,6 +156,8 @@ export const de: Record<MessageKey, string> = {
   'tx.col.category': 'Kategorie',
   'tx.col.amount': 'Betrag',
   'tx.col.volume': 'Stückzahl',
+  'tx.col.iban': 'IBAN',
+  'tx.col.bookingType': 'Buchungsart',
   'tx.empty': 'Keine Buchungen passen zu deinen Filtern.',
   'tx.delete': 'Löschen',
   'tx.categoryAria': 'Kategorie für {name}',
@@ -162,7 +172,11 @@ export const de: Record<MessageKey, string> = {
   'trends.overview': 'Übersicht',
   'trends.empty':
     'Für das Diagramm brauchst du mindestens einen Monat Bankdaten — unten kannst du trotzdem eine manuelle Ausgabe erfassen.',
-  'trends.title': 'Ausgaben-Trends (letzte 6 Monate)',
+  'trends.title': 'Ausgaben-Trends ({from} – {to})',
+  'trends.period': 'Diagrammzeitraum',
+  'trends.from': 'Von',
+  'trends.to': 'Bis',
+  'trends.category': 'Kategorie',
   'trends.hintAll':
     'Nur Ausgaben — Monat anklicken für Details, oder nach Kategorie filtern.',
   'trends.hintCategory':
@@ -171,7 +185,7 @@ export const de: Record<MessageKey, string> = {
   'trends.filterCategory': 'Nach Kategorie filtern',
   'trends.allExpenseCategories': 'Alle Ausgabenkategorien',
   'trends.selectedMonth': 'Gewählter Monat',
-  'trends.sixMonthAvg': '6-Monats-Durchschnitt',
+  'trends.periodAvg': 'Durchschnitt im Zeitraum',
   'trends.txShown': 'Angezeigte Buchungen',
   'trends.avg': 'Ø {amount}',
   'trends.spend': 'Ausgaben',
@@ -183,9 +197,12 @@ export const de: Record<MessageKey, string> = {
   'trends.noCategoryTx': 'Keine Buchungen in dieser Kategorie',
   'trends.forMonth': ' für {month}',
   'trends.monthTx': 'Buchungen {month}',
+  'trends.gapLegend':
+    'Markierte Monate: für mindestens ein Konto fehlen Buchungen im gewählten Zeitraum.',
   'trends.tooltip.total': 'Summe: {amount}',
   'trends.tooltip.trend': 'Trend: {amount}',
   'trends.tooltip.average': 'Durchschnitt: {amount}',
+  'trends.tooltip.missingAccounts': 'Keine Daten: {accounts}',
   'trends.tooltip.click': 'Balken anklicken für Monatsdetails',
 
   'dashboard.title': 'Monatsübersicht',
@@ -264,6 +281,40 @@ export const de: Record<MessageKey, string> = {
     'Import „{file}“ für {account} löschen?\n\nDadurch werden {count} Buchung entfernt.',
   'import.confirmDeletePlural':
     'Import „{file}“ für {account} löschen?\n\nDadurch werden {count} Buchungen entfernt.',
+  'import.notCsv.title': 'Dieser Dateityp kann nicht importiert werden',
+  'import.notCsv.body':
+    '„{file}“ sieht nach einer {ext}-Datei aus — nur CSV-Exporte werden unterstützt.',
+  'import.notCsv.hint':
+    'Tipp: Dein Online-Banking bietet einen CSV-Export (DKB: Umsätze → Export → CSV; Trade Republic: Profil → Aktivität → Export). Excel-Dateien kannst du über „Speichern unter…“ als CSV sichern; PDF-Auszüge lassen sich nicht importieren.',
+
+  'mapping.title': 'CSV-Spalten zuordnen',
+  'mapping.intro':
+    '„{file}“ ist kein bekannter DKB- oder Trade-Republic-Export. Ordne die Felder unten den Spalten deiner CSV zu, um sie trotzdem zu importieren.',
+  'mapping.detected': '{columns} Spalten · {rows} Zeilen erkannt',
+  'mapping.field.date': 'Buchungsdatum',
+  'mapping.field.amount': 'Betrag',
+  'mapping.field.counterparty': 'Empfänger / Auftraggeber',
+  'mapping.field.purpose': 'Verwendungszweck / Beschreibung',
+  'mapping.field.iban': 'IBAN',
+  'mapping.required': 'erforderlich',
+  'mapping.optional': 'optional',
+  'mapping.ignore': '— nicht in dieser CSV —',
+  'mapping.sample': 'z. B. {value}',
+  'mapping.amountHint':
+    'Negative Beträge zählen als Ausgaben, positive als Einnahmen.',
+  'mapping.account': 'In Konto importieren',
+  'mapping.newAccount': 'Neues Konto…',
+  'mapping.accountName': 'Kontoname',
+  'mapping.accountNamePlaceholder': 'z. B. N26 Konto',
+  'mapping.preview': 'Vorschau',
+  'mapping.chooseRequired':
+    'Wähle die Spalten für Buchungsdatum und Betrag, um eine Vorschau zu sehen.',
+  'mapping.noValidRows':
+    'Mit dieser Zuordnung können keine Zeilen importiert werden — prüfe die Datums- und Betragsspalte.',
+  'mapping.previewStats': '{valid} von {total} Zeilen können importiert werden.',
+  'mapping.import': '{count} Zeile importieren',
+  'mapping.importPlural': '{count} Zeilen importieren',
+  'mapping.cancel': 'Abbrechen',
 
   'manual.add': 'Ausgabe hinzufügen',
   'manual.title': 'Manuelle Ausgabe',

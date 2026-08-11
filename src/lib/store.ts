@@ -23,12 +23,19 @@ import {
 import { categorizeAll } from './categorize'
 import {
   extractDkbAccountMeta,
+  isDkbCsv,
   parseDkbCsv,
   readFileAsText,
   suggestAccountName,
   transactionContentKey,
   transactionHash,
 } from './dkbParser'
+import {
+  analyzeCsv,
+  buildGenericTransactions,
+  mapCsvRows,
+  type ColumnMapping,
+} from './genericCsvParser'
 import {
   isTradeRepublicCsv,
   parseTradeRepublicCsv,
@@ -727,6 +734,15 @@ function repairGemeinschaftskontoAccount(store: AppStore): AppStore {
 
 export type CsvFormat = ImportSource
 
+export type DetectedCsvFormat = ImportSource | 'unknown'
+
+/** Detect which known bank export a CSV text belongs to. */
+export function detectCsvFormat(text: string): DetectedCsvFormat {
+  if (isTradeRepublicCsv(text)) return 'trade_republic'
+  if (isDkbCsv(text)) return 'dkb'
+  return 'unknown'
+}
+
 export async function peekCsvImport(file: File): Promise<{
   format: CsvFormat
   suggestedName: string
@@ -848,6 +864,97 @@ export async function importCsvFile(
 /** @deprecated use importCsvFile */
 export async function importDkbFile(file: File, store: AppStore) {
   return importCsvFile(file, store)
+}
+
+export interface GenericImportInput {
+  fileName: string
+  /** Raw CSV text (already decoded). */
+  text: string
+  mapping: ColumnMapping
+  /** Existing account to import into (wins over accountName). */
+  accountId?: string | null
+  /** Name for a new account when no accountId is given. */
+  accountName?: string | null
+}
+
+/** Import an unknown-bank CSV using a user-provided column mapping. */
+export function importGenericCsv(
+  input: GenericImportInput,
+  store: AppStore,
+): { store: AppStore; result: ImportResult & { created: boolean } } {
+  // First real CSV replaces the sample dataset entirely
+  const baseStore = store.isDemo ? emptyStore() : store
+
+  const analysis = analyzeCsv(input.text)
+  if (!analysis) throw new Error('error.unreadableCsv')
+
+  const { rows } = mapCsvRows(analysis.rows, input.mapping)
+  if (rows.length === 0) throw new Error('error.noMappedRows')
+
+  let withAccount: AppStore
+  let account: Account
+  let created = false
+
+  const existing = input.accountId
+    ? baseStore.accounts.find((a) => a.id === input.accountId)
+    : undefined
+  if (existing) {
+    withAccount = baseStore
+    account = existing
+  } else {
+    const fileBase = input.fileName.replace(/\.[^.]+$/, '').trim()
+    const name = input.accountName?.trim() || fileBase || 'CSV Import'
+    const fingerprint = `csv:${name.toLowerCase().replace(/\s+/g, '_')}`
+    const resolved = resolveAccountForImport(baseStore, {
+      bank: 'CSV',
+      defaultName: name,
+      fingerprint,
+    })
+    withAccount = resolved.store
+    account = resolved.account
+    created = resolved.created
+  }
+
+  const importId = createImportId()
+  const importedAt = new Date().toISOString()
+
+  const parsed = buildGenericTransactions(rows, account.id)
+  const stamped = categorizeAll(parsed, withAccount.rules).map((t) => ({
+    ...t,
+    importId,
+    importedAt,
+  }))
+
+  const result = mergeTransactions(withAccount.transactions, stamped)
+  const transactions = categorizeAll(result.transactions, withAccount.rules)
+
+  const batch: ImportBatch = {
+    id: importId,
+    accountId: account.id,
+    source: 'generic',
+    fileName: input.fileName || 'import.csv',
+    importedAt,
+    addedCount: result.added,
+    duplicateCount: result.duplicates,
+    rawCsv: input.text,
+  }
+
+  return {
+    store: {
+      ...withAccount,
+      isDemo: false,
+      transactions,
+      imports: [batch, ...(withAccount.imports ?? [])],
+      lastImportedAt: importedAt,
+    },
+    result: {
+      ...result,
+      accountId: account.id,
+      transactions,
+      created,
+      importId,
+    },
+  }
 }
 
 function sameSenderAndAmount(

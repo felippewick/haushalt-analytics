@@ -13,6 +13,10 @@ export const en = {
   'app.demo.bodyAfter':
     'and upload your own bank CSV — the sample will be replaced.',
   'app.mergeApplied': 'Store merge applied and saved.',
+  'app.theme.aria': 'Switch color theme',
+  'app.theme.system': 'System',
+  'app.theme.light': 'Light',
+  'app.theme.dark': 'Dark',
   'app.footer':
     'Your data never leaves this device. No internet required, no account, no cloud — and no syncing between computers.',
 
@@ -113,6 +117,10 @@ export const en = {
   'error.loadStore': 'Failed to load store',
   'error.saveStore': 'Failed to save',
   'error.csvOnly': 'Please drop a .csv file.',
+  'error.unreadableCsv':
+    'Could not read this file as a CSV table — no columns were detected.',
+  'error.noMappedRows':
+    'No rows could be imported with this column mapping. Check the date and amount columns.',
 
   'merge.warn.empty': 'The imported store appears to be empty.',
   'merge.warn.alreadyPresent':
@@ -143,6 +151,8 @@ export const en = {
   'tx.col.category': 'Category',
   'tx.col.amount': 'Amount',
   'tx.col.volume': 'Volume',
+  'tx.col.iban': 'IBAN',
+  'tx.col.bookingType': 'Booking type',
   'tx.empty': 'No transactions match your filters.',
   'tx.delete': 'Delete',
   'tx.categoryAria': 'Category for {name}',
@@ -157,7 +167,11 @@ export const en = {
   'trends.overview': 'Overview',
   'trends.empty':
     'Need at least one month of bank data for the chart — you can still add a manual expense below.',
-  'trends.title': 'Expense trends (last 6 months)',
+  'trends.title': 'Expense trends ({from} – {to})',
+  'trends.period': 'Chart period',
+  'trends.from': 'From',
+  'trends.to': 'To',
+  'trends.category': 'Category',
   'trends.hintAll':
     'Expenses only — click a month for details, or filter by category.',
   'trends.hintCategory':
@@ -166,7 +180,7 @@ export const en = {
   'trends.filterCategory': 'Filter by category',
   'trends.allExpenseCategories': 'All expense categories',
   'trends.selectedMonth': 'Selected month',
-  'trends.sixMonthAvg': '6-month average',
+  'trends.periodAvg': 'Period average',
   'trends.txShown': 'Transactions shown',
   'trends.avg': 'Avg {amount}',
   'trends.spend': 'Spend',
@@ -178,9 +192,12 @@ export const en = {
   'trends.noCategoryTx': 'No transactions in this category',
   'trends.forMonth': ' for {month}',
   'trends.monthTx': '{month} transactions',
+  'trends.gapLegend':
+    'Marked months: no transactions for at least one account in the selected period.',
   'trends.tooltip.total': 'Total: {amount}',
   'trends.tooltip.trend': 'Trend: {amount}',
   'trends.tooltip.average': 'Average: {amount}',
+  'trends.tooltip.missingAccounts': 'No data: {accounts}',
   'trends.tooltip.click': 'Click bar to open month details',
 
   'dashboard.title': 'Monthly overview',
@@ -256,6 +273,40 @@ export const en = {
     'Delete import “{file}” for {account}?\n\nThis removes {count} transaction.',
   'import.confirmDeletePlural':
     'Delete import “{file}” for {account}?\n\nThis removes {count} transactions.',
+  'import.notCsv.title': 'This file type can’t be imported',
+  'import.notCsv.body':
+    '“{file}” looks like a {ext} file — only CSV exports are supported.',
+  'import.notCsv.hint':
+    'Tip: your online banking offers a CSV export (DKB: Transactions → Export → CSV; Trade Republic: Profile → Activity → Export). Excel files can be re-saved as CSV via “Save as…”; PDF statements can’t be imported.',
+
+  'mapping.title': 'Map CSV columns',
+  'mapping.intro':
+    '“{file}” isn’t a known DKB or Trade Republic export. Match the fields below to the columns of your CSV to import it anyway.',
+  'mapping.detected': '{columns} columns · {rows} rows detected',
+  'mapping.field.date': 'Booking date',
+  'mapping.field.amount': 'Amount',
+  'mapping.field.counterparty': 'Counterparty',
+  'mapping.field.purpose': 'Purpose / description',
+  'mapping.field.iban': 'IBAN',
+  'mapping.required': 'required',
+  'mapping.optional': 'optional',
+  'mapping.ignore': '— not in this CSV —',
+  'mapping.sample': 'e.g. {value}',
+  'mapping.amountHint':
+    'Negative amounts are counted as expenses, positive amounts as income.',
+  'mapping.account': 'Import into account',
+  'mapping.newAccount': 'New account…',
+  'mapping.accountName': 'Account name',
+  'mapping.accountNamePlaceholder': 'e.g. N26 Konto',
+  'mapping.preview': 'Preview',
+  'mapping.chooseRequired':
+    'Choose the booking date and amount columns to see a preview.',
+  'mapping.noValidRows':
+    'No rows can be imported with this mapping — check the date and amount columns.',
+  'mapping.previewStats': '{valid} of {total} rows can be imported.',
+  'mapping.import': 'Import {count} row',
+  'mapping.importPlural': 'Import {count} rows',
+  'mapping.cancel': 'Cancel',
 
   'manual.add': 'Add expense',
   'manual.title': 'Manual expense',

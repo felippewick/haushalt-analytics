@@ -1,13 +1,23 @@
 import { useMemo, useState } from 'react'
 import { format } from 'date-fns'
+import { Monitor, Moon, Sun } from '@phosphor-icons/react'
 import { useAppStore } from './hooks/useAppStore'
 import { useLocale, useSyncCategories } from './hooks/useLocale'
+import { useTheme } from './hooks/useTheme'
 import { ImportDropzone } from './components/ImportDropzone'
 import { Trends } from './components/Trends'
 import { TransactionTable } from './components/TransactionTable'
 import { AccountFilter } from './components/AccountFilter'
 import { SettingsDialog } from './components/SettingsDialog'
-import { selectableMonths } from './lib/analytics'
+import {
+  clampRangeToData,
+  compareMonths,
+  dataMonthSpan,
+  defaultMonthRange,
+  rangesOverlap,
+  selectableMonths,
+  type MonthRange,
+} from './lib/analytics'
 import { filterTransactionsByAccount } from './lib/store'
 import { translateError } from './lib/i18n'
 import './App.css'
@@ -22,6 +32,7 @@ export default function App() {
     error,
     lastImport,
     importFile,
+    importGenericFile,
     updateCategory,
     addManual,
     removeTransaction,
@@ -36,10 +47,12 @@ export default function App() {
     resetCategories,
   } = useAppStore()
   const { t } = useLocale()
+  const { preference, cycleTheme } = useTheme()
   useSyncCategories(store.categories)
 
   const [accountFilter, setAccountFilter] = useState<string[] | 'all'>('all')
   const [selectedMonth, setSelectedMonth] = useState<string>('')
+  const [periodRange, setPeriodRange] = useState<MonthRange | null>(null)
   const [tab, setTab] = useState<Tab>('trends')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [mergeNotice, setMergeNotice] = useState<string | null>(null)
@@ -49,9 +62,38 @@ export default function App() {
     [store.transactions, accountFilter],
   )
 
-  const months = useMemo(() => selectableMonths(visibleTxs, 6), [visibleTxs])
+  const months = useMemo(() => selectableMonths(visibleTxs), [visibleTxs])
 
-  const activeMonth = selectedMonth || months[0] || format(new Date(), 'yyyy-MM')
+  const activeRange = useMemo(() => {
+    const span = dataMonthSpan(visibleTxs)
+    if (!span) return null
+    if (!periodRange || !rangesOverlap(periodRange, span)) {
+      return defaultMonthRange(visibleTxs)
+    }
+    return clampRangeToData(periodRange, visibleTxs) ?? defaultMonthRange(visibleTxs)
+  }, [visibleTxs, periodRange])
+
+  const handlePeriodRangeChange = (next: MonthRange) => {
+    const clamped = clampRangeToData(next, visibleTxs)
+    if (!clamped) return
+    setPeriodRange(clamped)
+    setSelectedMonth((prev) => {
+      const current = prev || clamped.to
+      if (
+        compareMonths(current, clamped.from) < 0 ||
+        compareMonths(current, clamped.to) > 0
+      ) {
+        return clamped.to
+      }
+      return current
+    })
+  }
+
+  const activeMonth =
+    selectedMonth ||
+    activeRange?.to ||
+    months[0] ||
+    format(new Date(), 'yyyy-MM')
 
   if (loading) {
     return (
@@ -63,14 +105,31 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <button
-        type="button"
-        className="settings-btn"
-        onClick={() => setSettingsOpen(true)}
-        title={t('app.settingsTitle')}
-      >
-        {t('app.settings')}
-      </button>
+      <div className="header-actions">
+        <button
+          type="button"
+          className="header-action-btn"
+          onClick={cycleTheme}
+          title={t('app.theme.aria')}
+          aria-label={t('app.theme.aria')}
+        >
+          {preference === 'system' ? (
+            <Monitor aria-hidden="true" />
+          ) : preference === 'light' ? (
+            <Sun aria-hidden="true" />
+          ) : (
+            <Moon aria-hidden="true" />
+          )}
+        </button>
+        <button
+          type="button"
+          className="header-action-btn"
+          onClick={() => setSettingsOpen(true)}
+          title={t('app.settingsTitle')}
+        >
+          {t('app.settings')}
+        </button>
+      </div>
 
       <header className="app-header">
         <div>
@@ -156,6 +215,10 @@ export default function App() {
           accounts={store.accounts}
           selectedMonth={activeMonth}
           onSelectMonth={setSelectedMonth}
+          periodRange={
+            activeRange ?? { from: activeMonth, to: activeMonth }
+          }
+          onPeriodRangeChange={handlePeriodRangeChange}
           onAddManual={addManual}
           onDeleteManual={removeTransaction}
           onUpdateCategory={updateCategory}
@@ -176,6 +239,7 @@ export default function App() {
           transactions={store.transactions}
           isDemo={Boolean(store.isDemo)}
           onImport={importFile}
+          onImportGeneric={importGenericFile}
           onDeleteImport={removeImport}
           onRenameAccount={renameAccount}
           onReassignImport={reassignImport}

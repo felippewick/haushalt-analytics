@@ -34,7 +34,7 @@ The app expects the current (post-2023) format: semicolon-separated, German date
 - **Import** with automatic dedupe (safe to re-export overlapping periods)
 - **Auto-categorization** via keyword rules (REWE → Groceries, BVG → Transport, etc.)
 - **Manual overrides** in the transactions table; check **always** to remember a merchant
-- **Overview**: stacked 6-month chart; click a month for income/expenses, category donut, and biggest expenses
+- **Overview**: stacked expense chart for a selectable month range (defaults to the last 12 months when enough history exists); click a month for income/expenses, category donut, and biggest expenses. Months missing data for an account are marked on the chart.
 - **Accounts**: import CSVs into named accounts (DKB, Trade Republic, …); aggregate all by default or filter in the header
 - **DKB + Trade Republic** CSV auto-detection on import
 - **Persistence**: desktop app writes to the OS app-data folder; browser/dev mode writes to [`data/store.json`](data/store.json)

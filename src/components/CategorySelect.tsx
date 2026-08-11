@@ -1,5 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
-import { Check, ChevronDown } from 'lucide-react'
+import { CaretDown, Check } from '@phosphor-icons/react'
 import type { Category, CategoryId } from '../lib/types'
 import { useLocale } from '../hooks/useLocale'
 import { CategoryIcon } from './CategoryIcon'
@@ -128,10 +128,10 @@ export function CategorySelect({
       >
         <CategoryIcon categoryId={value} badge size={13} />
         <span className="cat-select-label">{selectedLabel}</span>
-        <ChevronDown
+        <CaretDown
           className="cat-select-chevron"
           size={12}
-          strokeWidth={2.5}
+          weight="bold"
           aria-hidden="true"
         />
       </button>
@@ -242,7 +242,7 @@ function OptionGroup({
                 <Check
                   className="cat-select-check"
                   size={14}
-                  strokeWidth={2.5}
+                  weight="bold"
                   aria-hidden="true"
                 />
               )}

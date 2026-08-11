@@ -4,9 +4,14 @@ import type { Account, CategoryId, ImportBatch, Transaction } from '../lib/types
 import {
   accountLabel,
   accountOptionLabel,
+  detectCsvFormat,
   formatIban,
+  type GenericImportInput,
 } from '../lib/store'
+import { readFileAsText } from '../lib/dkbParser'
+import { analyzeCsv, type CsvAnalysis } from '../lib/genericCsvParser'
 import { TransactionTable } from './TransactionTable'
+import { CsvMappingDialog } from './CsvMappingDialog'
 import { useLocale } from '../hooks/useLocale'
 import { translateError } from '../lib/i18n'
 
@@ -16,6 +21,12 @@ interface Props {
   transactions: Transaction[]
   isDemo?: boolean
   onImport: (file: File) => Promise<{
+    added: number
+    duplicates: number
+    accountId: string
+    created?: boolean
+  }>
+  onImportGeneric: (input: GenericImportInput) => Promise<{
     added: number
     duplicates: number
     accountId: string
@@ -43,7 +54,18 @@ interface Props {
 }
 
 function sourceLabel(source: ImportBatch['source']): string {
-  return source === 'trade_republic' ? 'Trade Republic' : 'DKB'
+  if (source === 'trade_republic') return 'Trade Republic'
+  if (source === 'generic') return 'CSV'
+  return 'DKB'
+}
+
+/** Uppercased extension for the not-a-CSV warning, e.g. "PDF". */
+function fileExtension(file: File): string {
+  const dot = file.name.lastIndexOf('.')
+  if (dot > 0 && dot < file.name.length - 1) {
+    return file.name.slice(dot + 1).toUpperCase()
+  }
+  return file.type || '?'
 }
 
 function formatImportedAt(iso: string): string {
@@ -60,6 +82,7 @@ export function ImportDropzone({
   transactions,
   isDemo = false,
   onImport,
+  onImportGeneric,
   onDeleteImport,
   onRenameAccount,
   onReassignImport,
@@ -73,6 +96,15 @@ export function ImportDropzone({
   const [dragging, setDragging] = useState(false)
   const [busy, setBusy] = useState(false)
   const [localError, setLocalError] = useState<string | null>(null)
+  const [notCsvFile, setNotCsvFile] = useState<{
+    name: string
+    ext: string
+  } | null>(null)
+  const [pendingMapping, setPendingMapping] = useState<{
+    fileName: string
+    text: string
+    analysis: CsvAnalysis
+  } | null>(null)
   const [draftNames, setDraftNames] = useState<Record<string, string>>({})
   const [viewingImportId, setViewingImportId] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<'transactions' | 'csv'>(
@@ -117,14 +149,28 @@ export function ImportDropzone({
 
   const onPickFile = async (file: File | undefined) => {
     if (!file) return
+    setLocalError(null)
+    setNotCsvFile(null)
+
     if (!file.name.toLowerCase().endsWith('.csv') && file.type !== 'text/csv') {
-      setLocalError(t('error.csvOnly'))
+      setNotCsvFile({ name: file.name, ext: fileExtension(file) })
+      if (inputRef.current) inputRef.current.value = ''
       return
     }
 
-    setLocalError(null)
     setBusy(true)
     try {
+      const text = await readFileAsText(file)
+      if (detectCsvFormat(text) === 'unknown') {
+        // Not a DKB / Trade Republic export — let the user map the columns
+        const analysis = analyzeCsv(text)
+        if (!analysis) {
+          setLocalError(t('error.unreadableCsv'))
+          return
+        }
+        setPendingMapping({ fileName: file.name, text, analysis })
+        return
+      }
       await onImport(file)
     } catch (e) {
       setLocalError(translateError(t, e))
@@ -132,6 +178,22 @@ export function ImportDropzone({
       setBusy(false)
       if (inputRef.current) inputRef.current.value = ''
     }
+  }
+
+  const confirmMapping = async (input: {
+    mapping: GenericImportInput['mapping']
+    accountId?: string
+    accountName?: string
+  }) => {
+    if (!pendingMapping) return
+    await onImportGeneric({
+      fileName: pendingMapping.fileName,
+      text: pendingMapping.text,
+      mapping: input.mapping,
+      accountId: input.accountId,
+      accountName: input.accountName,
+    })
+    setPendingMapping(null)
   }
 
   const onDrop = (e: DragEvent) => {
@@ -263,6 +325,18 @@ export function ImportDropzone({
           )}
         </div>
         {localError && <p className="error">{localError}</p>}
+        {notCsvFile && (
+          <div className="import-warning" role="alert">
+            <strong>{t('import.notCsv.title')}</strong>
+            <p>
+              {t('import.notCsv.body', {
+                file: notCsvFile.name,
+                ext: notCsvFile.ext,
+              })}
+            </p>
+            <p className="import-warning-hint">{t('import.notCsv.hint')}</p>
+          </div>
+        )}
         {lastImport && lastAccount && (
           <p className="import-summary">
             {lastImport.created
@@ -560,6 +634,15 @@ export function ImportDropzone({
           )}
         </div>
       )}
+
+      <CsvMappingDialog
+        open={pendingMapping !== null}
+        fileName={pendingMapping?.fileName ?? ''}
+        analysis={pendingMapping?.analysis ?? null}
+        accounts={isDemo ? [] : bankAccounts}
+        onCancel={() => setPendingMapping(null)}
+        onConfirm={confirmMapping}
+      />
     </>
   )
 }

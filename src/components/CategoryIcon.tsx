@@ -1,62 +1,66 @@
 import {
+  AirplaneTilt,
+  ArrowsLeftRight,
+  ArrowUUpLeft,
   Baby,
-  Banknote,
+  Bank,
   Briefcase,
   Car,
+  ChartLineUp,
   CircleDashed,
-  Clapperboard,
   Coffee,
+  DotsThree,
+  FilmSlate,
   Gift,
-  HeartPulse,
-  HelpCircle,
-  Home,
-  Landmark,
-  LineChart,
-  MoreHorizontal,
+  Heartbeat,
+  House,
+  Lightning,
+  Money,
   Palette,
   PiggyBank,
-  Plane,
-  Repeat,
+  Question,
   Shield,
   ShoppingBag,
   ShoppingCart,
-  Shirt,
+  Storefront,
   Tag,
-  Wifi,
-  Zap,
-  type LucideIcon,
-} from 'lucide-react'
+  TShirt,
+  WifiHigh,
+  type Icon,
+} from '@phosphor-icons/react'
 import type { CategoryId } from '../lib/types'
 import { getCategoryMap } from '../lib/categories'
 import { CATEGORY_MAP as DEFAULT_CATEGORY_MAP } from '../lib/defaultRules'
 import type { BuiltinCategoryId } from '../lib/types'
 
-const CATEGORY_ICONS: Partial<Record<CategoryId, LucideIcon>> &
-  Record<BuiltinCategoryId, LucideIcon> = {
+const CATEGORY_ICONS: Partial<Record<CategoryId, Icon>> &
+  Record<BuiltinCategoryId, Icon> = {
   groceries: ShoppingCart,
   coffee_restaurants: Coffee,
-  rent: Home,
-  clothing: Shirt,
+  rent: House,
+  clothing: TShirt,
   transport: Car,
-  subscriptions: Wifi,
+  subscriptions: WifiHigh,
   insurance: Shield,
-  health: HeartPulse,
-  utilities: Zap,
+  health: Heartbeat,
+  utilities: Lightning,
   shopping: ShoppingBag,
   gifts: Gift,
-  entertainment: Clapperboard,
+  entertainment: FilmSlate,
   hobbies: Palette,
   kids: Baby,
-  travel: Plane,
+  travel: AirplaneTilt,
   reserves: PiggyBank,
-  investments: LineChart,
-  securities: Landmark,
-  atm: Banknote,
+  investments: ChartLineUp,
+  securities: Bank,
+  atm: Money,
   salary: Briefcase,
-  transfer: Repeat,
+  refunds: ArrowUUpLeft,
+  sales: Storefront,
+  transfer: ArrowsLeftRight,
   excluded: CircleDashed,
-  other: MoreHorizontal,
-  uncategorized: HelpCircle,
+  other: DotsThree,
+  uncategorized: Question,
 }
 
 interface Props {
@@ -85,11 +89,11 @@ export function CategoryIcon({
         className={`cat-icon-badge ${className}`.trim()}
         style={{
           color,
-          background: `${color}1a`,
+          background: `${color}24`,
         }}
         aria-hidden="true"
       >
-        <Icon size={size} strokeWidth={2.25} />
+        <Icon size={size} weight="bold" />
       </span>
     )
   }
@@ -99,7 +103,7 @@ export function CategoryIcon({
       className={className}
       size={size}
       color={color}
-      strokeWidth={2.25}
+      weight="bold"
       aria-hidden="true"
     />
   )

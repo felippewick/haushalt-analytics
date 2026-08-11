@@ -1,4 +1,10 @@
 import { useMemo, useState } from 'react'
+import {
+  ArrowDownLeft,
+  ArrowUpRight,
+  ArrowsLeftRight,
+  type Icon,
+} from '@phosphor-icons/react'
 import type { Account, CategoryId, Transaction } from '../lib/types'
 import {
   filterTransactions,
@@ -13,6 +19,12 @@ import { parseISO, format } from 'date-fns'
 import { CategorySelect } from './CategorySelect'
 import { CategoryIcon } from './CategoryIcon'
 import { useLocale } from '../hooks/useLocale'
+
+const FLOW_ICONS: Record<TransactionFlow, Icon> = {
+  expense: ArrowDownLeft,
+  income: ArrowUpRight,
+  transfer: ArrowsLeftRight,
+}
 
 interface Props {
   transactions: Transaction[]
@@ -42,6 +54,13 @@ function formatVolume(quantity: number, localeTag: string): string {
   return new Intl.NumberFormat(localeTag, {
     maximumFractionDigits: 6,
   }).format(quantity)
+}
+
+/** Compact account label: first 4 + last 4 chars (spaces ignored). */
+function abbreviateAccount(label: string): string {
+  const compact = label.replace(/\s+/g, '')
+  if (compact.length <= 8) return compact
+  return `${compact.slice(0, 4)}…${compact.slice(-4)}`
 }
 
 export function TransactionTable({
@@ -209,11 +228,15 @@ export function TransactionTable({
         <table>
           <thead>
             <tr>
-              <th>{t('tx.col.date')}</th>
-              <th>{t('tx.col.type')}</th>
-              {showAccountCol && <th>{t('tx.col.account')}</th>}
+              <th className="col-date">{t('tx.col.date')}</th>
+              <th className="col-type" title={t('tx.col.type')}>
+                {t('tx.col.type')}
+              </th>
+              {showAccountCol && (
+                <th className="col-account">{t('tx.col.account')}</th>
+              )}
               <th>{t('tx.col.counterparty')}</th>
-              <th>{t('tx.col.purpose')}</th>
+              <th className="col-purpose">{t('tx.col.purpose')}</th>
               <th>{t('tx.col.category')}</th>
               <th className="num">{t('tx.col.amount')}</th>
               <th className="num">{t('tx.col.volume')}</th>
@@ -254,6 +277,56 @@ export function TransactionTable({
   )
 }
 
+function buildTxHoverInfo({
+  tx,
+  accountName,
+  showAccountCol,
+  flowLabel,
+  formatEur,
+  formatVolume,
+  volume,
+  t,
+}: {
+  tx: Transaction
+  accountName: string
+  showAccountCol: boolean
+  flowLabel: string
+  formatEur: (n: number) => string
+  formatVolume: (n: number) => string
+  volume: number | null
+  t: (
+    key:
+      | 'tx.col.date'
+      | 'tx.col.type'
+      | 'tx.col.account'
+      | 'tx.col.counterparty'
+      | 'tx.col.purpose'
+      | 'tx.col.amount'
+      | 'tx.col.volume'
+      | 'tx.col.iban'
+      | 'tx.col.bookingType',
+  ) => string
+}): string {
+  const lines = [
+    `${t('tx.col.date')}: ${format(parseISO(tx.date), 'dd.MM.yyyy')}`,
+    `${t('tx.col.type')}: ${flowLabel}`,
+  ]
+  if (showAccountCol) {
+    lines.push(`${t('tx.col.account')}: ${accountName}`)
+  }
+  lines.push(
+    `${t('tx.col.counterparty')}: ${tx.counterparty || '—'}`,
+    `${t('tx.col.purpose')}: ${tx.purpose || '—'}`,
+  )
+  if (tx.iban) lines.push(`${t('tx.col.iban')}: ${tx.iban}`)
+  if (tx.type) lines.push(`${t('tx.col.bookingType')}: ${tx.type}`)
+  lines.push(`${t('tx.col.amount')}: ${formatEur(tx.amount)}`)
+  if (volume != null) {
+    lines.push(`${t('tx.col.volume')}: ${formatVolume(volume)}`)
+  }
+  return lines.join('\n')
+}
+
 function TransactionRow({
   tx,
   accountName,
@@ -273,32 +346,64 @@ function TransactionRow({
   flowLabel: Record<TransactionFlow, string>
   formatEur: (n: number) => string
   formatVolume: (n: number) => string
-  t: (key: 'tx.delete' | 'tx.categoryAria' | 'tx.transaction', params?: Record<string, string | number>) => string
+  t: (
+    key:
+      | 'tx.delete'
+      | 'tx.categoryAria'
+      | 'tx.transaction'
+      | 'tx.col.date'
+      | 'tx.col.type'
+      | 'tx.col.account'
+      | 'tx.col.counterparty'
+      | 'tx.col.purpose'
+      | 'tx.col.amount'
+      | 'tx.col.volume'
+      | 'tx.col.iban'
+      | 'tx.col.bookingType',
+    params?: Record<string, string | number>,
+  ) => string
 }) {
   const flow = transactionFlow(tx)
   const volume = parseTransferredVolume(tx.purpose)
   const canDelete = Boolean(onDeleteManual && tx.origin === 'manual')
+  const FlowIcon = FLOW_ICONS[flow]
+  const hoverInfo = buildTxHoverInfo({
+    tx,
+    accountName,
+    showAccountCol,
+    flowLabel: flowLabel[flow],
+    formatEur,
+    formatVolume,
+    volume,
+    t,
+  })
 
   return (
     <tr
       className={`${tx.categoryId === 'uncategorized' ? 'uncategorized' : ''} flow-row-${flow}`}
+      title={hoverInfo}
     >
-      <td className="nowrap">{format(parseISO(tx.date), 'dd.MM.yyyy')}</td>
-      <td>
-        <span className={`flow-badge ${flow}`}>{flowLabel[flow]}</span>
+      <td className="col-date nowrap">
+        {format(parseISO(tx.date), 'dd.MM.yy')}
+      </td>
+      <td className="col-type">
+        <span
+          className={`flow-badge icon-only ${flow}`}
+          aria-label={flowLabel[flow]}
+        >
+          <FlowIcon size={13} weight="bold" aria-hidden />
+        </span>
       </td>
       {showAccountCol && (
-        <td>
-          <span className="muted small">{accountName}</span>
+        <td className="col-account">
+          <span className="muted account-abbr">{abbreviateAccount(accountName)}</span>
         </td>
       )}
       <td>
         <div className="merchant">{tx.counterparty || '—'}</div>
       </td>
-      <td>
-        <div className="purpose truncate" title={tx.purpose}>
-          {tx.purpose || '—'}
-        </div>
+      <td className="col-purpose">
+        <div className="purpose truncate">{tx.purpose || '—'}</div>
       </td>
       <td>
         <CategorySelect
