@@ -31,7 +31,7 @@ export const en = {
   'settings.menu.intro':
     'Choose a setting to change language, categories, or move your data between devices.',
   'settings.menu.language': 'Language',
-  'settings.menu.languageDesc': 'English or German interface',
+  'settings.menu.languageDesc': 'Follow the device, or pick English or German',
   'settings.menu.categories': 'Categories',
   'settings.menu.categoriesDesc': 'Add, rename, or remove spending categories',
   'settings.menu.categoriesCount': '{count}',
@@ -39,12 +39,13 @@ export const en = {
   'settings.menu.dataDesc': 'Move store.json between computers',
   'settings.language': 'Language',
   'settings.language.title': 'Language',
+  'settings.language.system': 'System',
   'settings.language.en': 'English',
   'settings.language.de': 'Deutsch',
   'settings.language.hint':
     'Affects the interface only — labels, menus, and month names. Your transactions and categories stay unchanged.',
   'settings.language.detail':
-    'Pick the language for uebrig. The choice is saved on this device and applies immediately.',
+    'By default uebrig follows your device language. Pick English or German to override; the choice is saved on this device.',
   'settings.categories.title': 'Categories',
   'settings.categories.detail':
     'The built-in categories are the default. Add your own, rename or recolor existing ones, or delete categories you do not use. Transactions in a deleted category move to Uncategorized.',

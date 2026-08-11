@@ -1,32 +1,38 @@
+import { format, parseISO } from 'date-fns'
+import { de as dateFnsDe } from 'date-fns/locale/de'
+import { enUS as dateFnsEn } from 'date-fns/locale/en-US'
 import {
   createContext,
+  type ReactNode,
   useCallback,
   useContext,
   useEffect,
   useMemo,
   useState,
-  type ReactNode,
 } from 'react'
-import { de as dateFnsDe } from 'date-fns/locale/de'
-import { enUS as dateFnsEn } from 'date-fns/locale/en-US'
-import { format, parseISO } from 'date-fns'
-import type { Category, CategoryId } from '../lib/types'
-import { CATEGORIES } from '../lib/defaultRules'
 import { isBuiltinCategory } from '../lib/categories'
+import { CATEGORIES } from '../lib/defaultRules'
 import {
-  categoryLabel as i18nCategoryLabel,
   createTranslator,
-  loadStoredLocale,
-  localeTag,
-  persistLocale,
+  detectSystemLocale,
+  categoryLabel as i18nCategoryLabel,
+  loadStoredLocalePreference,
   type Locale,
+  type LocalePreference,
+  localeTag,
   type MessageKey,
+  persistLocalePreference,
+  resolveLocale,
   type TranslateFn,
 } from '../lib/i18n'
+import type { Category, CategoryId } from '../lib/types'
 
 interface LocaleContextValue {
+  /** Resolved UI language (never `system`). */
   locale: Locale
-  setLocale: (locale: Locale) => void
+  /** Saved preference: follow device, or an explicit language. */
+  preference: LocalePreference
+  setLocale: (preference: LocalePreference) => void
   t: TranslateFn
   categoryLabel: (id: CategoryId) => string
   categories: Category[]
@@ -63,14 +69,28 @@ function localizedCategories(
 }
 
 export function LocaleProvider({ children }: { children: ReactNode }) {
-  const [locale, setLocaleState] = useState<Locale>(() => loadStoredLocale())
+  const [preference, setPreference] = useState<LocalePreference>(() =>
+    loadStoredLocalePreference(),
+  )
+  const [systemLocale, setSystemLocale] = useState<Locale>(() =>
+    detectSystemLocale(),
+  )
   const [storeCategories, setStoreCategories] = useState<Category[] | null>(
     null,
   )
 
-  const setLocale = useCallback((next: Locale) => {
-    setLocaleState(next)
-    persistLocale(next)
+  useEffect(() => {
+    const onLanguageChange = () => setSystemLocale(detectSystemLocale())
+    window.addEventListener('languagechange', onLanguageChange)
+    return () => window.removeEventListener('languagechange', onLanguageChange)
+  }, [])
+
+  const locale: Locale =
+    preference === 'system' ? systemLocale : resolveLocale(preference)
+
+  const setLocale = useCallback((next: LocalePreference) => {
+    setPreference(next)
+    persistLocalePreference(next)
   }, [])
 
   useEffect(() => {
@@ -87,6 +107,7 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
 
     return {
       locale,
+      preference,
       setLocale,
       t,
       categoryLabel: (id) => resolveCategoryLabel(byId.get(id), id, locale),
@@ -123,7 +144,7 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
         }).format(amount),
       dateLocale,
     }
-  }, [locale, setLocale, storeCategories])
+  }, [locale, preference, setLocale, storeCategories])
 
   return (
     <SetCategoriesContext.Provider value={setStoreCategories}>
@@ -148,4 +169,4 @@ export function useLocale(): LocaleContextValue {
   return ctx
 }
 
-export type { MessageKey, Locale }
+export type { Locale, LocalePreference, MessageKey }

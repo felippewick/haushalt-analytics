@@ -1,15 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
-import type { AppStore, CategoryId } from '../lib/types'
+import { useLocale } from '../hooks/useLocale'
 import type { CategoryInput } from '../lib/categories'
+import type { MessageKey } from '../lib/i18n'
+import { translateError } from '../lib/i18n'
+import { emptyStore } from '../lib/store'
 import {
   downloadStoreJson,
   previewStoreFileMerge,
   type StoreMergePreview,
 } from '../lib/storeMerge'
-import { emptyStore } from '../lib/store'
-import { useLocale } from '../hooks/useLocale'
-import type { MessageKey } from '../lib/i18n'
-import { translateError } from '../lib/i18n'
+import type { AppStore, CategoryId } from '../lib/types'
 import { CategoryManager } from './CategoryManager'
 
 interface Props {
@@ -73,7 +73,7 @@ export function SettingsDialog({
   onDeleteCategory,
   onResetCategories,
 }: Props) {
-  const { t, locale, setLocale, categoryLabel } = useLocale()
+  const { t, preference, setLocale, categoryLabel } = useLocale()
   const dialogRef = useRef<HTMLDialogElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const [pane, setPane] = useState<SettingsPane>('menu')
@@ -161,7 +161,11 @@ export function SettingsDialog({
           : t('settings.title')
 
   const languageValue =
-    locale === 'de' ? t('settings.language.de') : t('settings.language.en')
+    preference === 'system'
+      ? t('settings.language.system')
+      : preference === 'de'
+        ? t('settings.language.de')
+        : t('settings.language.en')
 
   const categoryCount = store.categories?.length ?? 0
 
@@ -270,6 +274,7 @@ export function SettingsDialog({
               </legend>
               {(
                 [
+                  ['system', 'settings.language.system'],
                   ['en', 'settings.language.en'],
                   ['de', 'settings.language.de'],
                 ] as const
@@ -279,7 +284,7 @@ export function SettingsDialog({
                     type="radio"
                     name="settings-locale"
                     value={id}
-                    checked={locale === id}
+                    checked={preference === id}
                     onChange={() => setLocale(id)}
                   />
                   <span>

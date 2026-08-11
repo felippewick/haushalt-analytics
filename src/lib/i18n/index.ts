@@ -2,14 +2,18 @@ import { de } from './de'
 import { en, type MessageKey } from './en'
 import {
   DEFAULT_LOCALE,
-  isLocale,
+  isLocalePreference,
   LOCALE_STORAGE_KEY,
   type Locale,
+  type LocalePreference,
 } from './types'
 
-export type { Locale, MessageKey }
-export { DEFAULT_LOCALE, LOCALES, LOCALE_STORAGE_KEY, isLocale } from './types'
-export { categoryLabel, CATEGORY_LABELS } from './categories'
+export { CATEGORY_LABELS, categoryLabel } from './categories'
+export {
+  DEFAULT_LOCALE, isLocale,
+  isLocalePreference, LOCALE_STORAGE_KEY, LOCALES
+} from './types'
+export type { Locale, LocalePreference, MessageKey }
 
 const catalogs: Record<Locale, Record<MessageKey, string>> = {
   en,
@@ -34,19 +38,45 @@ export function createTranslator(locale: Locale): TranslateFn {
   }
 }
 
-export function loadStoredLocale(): Locale {
+/** Map the device language to a supported UI locale. */
+export function detectSystemLocale(): Locale {
+  const candidates: string[] = []
   try {
-    const raw = localStorage.getItem(LOCALE_STORAGE_KEY)
-    if (isLocale(raw)) return raw
+    if (typeof navigator !== 'undefined') {
+      if (Array.isArray(navigator.languages)) {
+        candidates.push(...navigator.languages)
+      }
+      if (navigator.language) candidates.push(navigator.language)
+    }
   } catch {
-    // ignore (SSR / privacy mode)
+    // ignore
+  }
+
+  for (const tag of candidates) {
+    const primary = tag.trim().toLowerCase().split('-')[0]
+    if (primary === 'de') return 'de'
+    if (primary === 'en') return 'en'
   }
   return DEFAULT_LOCALE
 }
 
-export function persistLocale(locale: Locale): void {
+export function resolveLocale(preference: LocalePreference): Locale {
+  return preference === 'system' ? detectSystemLocale() : preference
+}
+
+export function loadStoredLocalePreference(): LocalePreference {
   try {
-    localStorage.setItem(LOCALE_STORAGE_KEY, locale)
+    const raw = localStorage.getItem(LOCALE_STORAGE_KEY)
+    if (isLocalePreference(raw)) return raw
+  } catch {
+    // ignore (SSR / privacy mode)
+  }
+  return 'system'
+}
+
+export function persistLocalePreference(preference: LocalePreference): void {
+  try {
+    localStorage.setItem(LOCALE_STORAGE_KEY, preference)
   } catch {
     // ignore
   }

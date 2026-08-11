@@ -34,7 +34,7 @@ export const de: Record<MessageKey, string> = {
   'settings.menu.intro':
     'Wähle eine Einstellung, um Sprache oder Kategorien zu ändern oder Daten zwischen Geräten zu übertragen.',
   'settings.menu.language': 'Sprache',
-  'settings.menu.languageDesc': 'Oberfläche auf Englisch oder Deutsch',
+  'settings.menu.languageDesc': 'Gerät folgen oder Englisch bzw. Deutsch wählen',
   'settings.menu.categories': 'Kategorien',
   'settings.menu.categoriesDesc': 'Ausgabenkategorien hinzufügen, umbenennen oder entfernen',
   'settings.menu.categoriesCount': '{count}',
@@ -42,12 +42,13 @@ export const de: Record<MessageKey, string> = {
   'settings.menu.dataDesc': 'store.json zwischen Computern übertragen',
   'settings.language': 'Sprache',
   'settings.language.title': 'Sprache',
+  'settings.language.system': 'System',
   'settings.language.en': 'English',
   'settings.language.de': 'Deutsch',
   'settings.language.hint':
     'Betrifft nur die Oberfläche — Beschriftungen, Menüs und Monatsnamen. Deine Buchungen und Kategorien bleiben unverändert.',
   'settings.language.detail':
-    'Wähle die Sprache für uebrig. Die Auswahl wird auf diesem Gerät gespeichert und gilt sofort.',
+    'Standardmäßig folgt uebrig der Gerätesprache. Wähle Englisch oder Deutsch zum Überschreiben; die Auswahl wird auf diesem Gerät gespeichert.',
   'settings.categories.title': 'Kategorien',
   'settings.categories.detail':
     'Die mitgelieferten Kategorien sind die Voreinstellung. Füge eigene hinzu, benenne bestehende um, ändere Farben oder lösche ungenutzte. Buchungen einer gelöschten Kategorie wandern nach Unkategorisiert.',
