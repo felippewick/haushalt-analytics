@@ -287,7 +287,7 @@ export function Dashboard({
                 <p className="muted">{t('dashboard.noExpenses')}</p>
               ) : (
                 <ResponsiveContainer width="100%" height={260}>
-                  <PieChart>
+                  <PieChart accessibilityLayer={false}>
                     <Pie
                       data={expenseChart}
                       dataKey="value"
@@ -332,7 +332,7 @@ export function Dashboard({
                 <p className="muted">{t('dashboard.noIncome')}</p>
               ) : (
                 <ResponsiveContainer width="100%" height={260}>
-                  <PieChart>
+                  <PieChart accessibilityLayer={false}>
                     <Pie
                       data={incomeChart}
                       dataKey="value"

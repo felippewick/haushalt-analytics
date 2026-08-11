@@ -175,88 +175,6 @@ function makeGapMarkerLabel(data: { gap: number }[]) {
   }
 }
 
-/** Prefer dark text on light category colors so in-bar labels stay readable. */
-function contrastOnColor(hex: string): string {
-  const raw = hex.replace('#', '')
-  if (raw.length !== 6) return '#ffffff'
-  const r = Number.parseInt(raw.slice(0, 2), 16)
-  const g = Number.parseInt(raw.slice(2, 4), 16)
-  const b = Number.parseInt(raw.slice(4, 6), 16)
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
-  return luminance > 0.62 ? '#111111' : '#ffffff'
-}
-
-const MIN_IN_BAR_LABEL_HEIGHT = 36
-const MIN_IN_BAR_LABEL_WIDTH = 36
-
-function truncateForBar(text: string, widthPx: number): string {
-  const maxChars = Math.max(3, Math.floor(widthPx / 6.5))
-  if (text.length <= maxChars) return text
-  return `${text.slice(0, Math.max(2, maxChars - 1))}…`
-}
-
-function InBarHoverLabel({
-  x,
-  y,
-  width,
-  height,
-  value,
-  payload,
-  name,
-  color,
-  formatAmount,
-  hoveredLabel,
-}: {
-  x?: number | string
-  y?: number | string
-  width?: number | string
-  height?: number | string
-  value?: number | string
-  payload?: { label?: string }
-  name: string
-  color: string
-  formatAmount: (n: number) => string
-  hoveredLabel: string | null
-}) {
-  const amount = Number(value)
-  const w = Number(width ?? 0)
-  const h = Number(height ?? 0)
-  const monthLabel = payload?.label
-  if (
-    !hoveredLabel ||
-    monthLabel !== hoveredLabel ||
-    !Number.isFinite(amount) ||
-    amount <= 0 ||
-    h < MIN_IN_BAR_LABEL_HEIGHT ||
-    w < MIN_IN_BAR_LABEL_WIDTH
-  ) {
-    return null
-  }
-
-  const cx = Number(x ?? 0) + w / 2
-  const cy = Number(y ?? 0) + h / 2
-  const fill = contrastOnColor(color)
-
-  return (
-    <text
-      x={cx}
-      y={cy}
-      textAnchor="middle"
-      dominantBaseline="central"
-      fill={fill}
-      className="trend-in-bar-label"
-      style={{ pointerEvents: 'none' }}
-    >
-      <tspan x={cx} dy="-0.55em">
-        {truncateForBar(name, w)}
-      </tspan>
-      <tspan x={cx} dy="1.2em" className="trend-in-bar-amount">
-        {formatAmount(amount)}
-      </tspan>
-    </text>
-  )
-}
-
 function barOpacity(selectedMonth: string, entryMonth: string, gap: number) {
   const base = !selectedMonth || entryMonth === selectedMonth ? 1 : 0.35
   return gap === 1 ? base * 0.55 : base
@@ -288,13 +206,6 @@ export function Trends({
     'all',
   )
   const [listScope, setListScope] = useState<'month' | 'all'>('all')
-  const [hoveredLabel, setHoveredLabel] = useState<string | null>(null)
-
-  const syncHoveredLabel = (state: MouseHandlerDataParam) => {
-    setHoveredLabel(
-      typeof state.activeLabel === 'string' ? state.activeLabel : null,
-    )
-  }
 
   const accountName = useMemo(() => {
     const map = new Map(accounts.map((a) => [a.id, a.name]))
@@ -540,6 +451,7 @@ export function Trends({
               data={stacked.data}
               margin={{ top: 28, right: 16, left: 8, bottom: 8 }}
               style={{ cursor: 'pointer' }}
+              accessibilityLayer={false}
               onClick={(state) => {
                 const month = monthFromChartClick(state, stacked.data)
                 if (month) onSelectMonth(month)
@@ -643,6 +555,7 @@ export function Trends({
                 data={categoryTrend?.data ?? []}
                 margin={{ top: 28, right: 16, left: 8, bottom: 8 }}
                 style={{ cursor: 'pointer' }}
+                accessibilityLayer={false}
                 onClick={(state) => {
                   const month = monthFromChartClick(
                     state,

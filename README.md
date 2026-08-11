@@ -63,6 +63,8 @@ npm run dev
 
 Open the URL Vite prints (usually http://localhost:5173). Persistence uses the Vite middleware → `data/store.json`.
 
+`npm install` also installs a **Husky pre-commit hook** that runs `npm run typecheck` and `npm run lint`. That catches unused locals / TypeScript errors locally before they fail `tauri build` in CI (the same check as `tsc -b` in `npm run build`).
+
 ### Desktop app
 
 ```bash
@@ -137,7 +139,9 @@ Add signing secrets and Tauri signing config when you are ready to ship publicly
 
 ```bash
 npm run dev          # browser + JSON persistence
-npm run build        # frontend production build
+npm run typecheck    # TypeScript only (same gate as pre-commit / CI build)
+npm run lint         # oxlint
+npm run build        # frontend production build (typecheck + vite)
 npm run preview      # preview build (persistence middleware included)
 npm run tauri:dev    # desktop app (dev)
 npm run tauri:build  # desktop installers

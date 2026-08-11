@@ -33,24 +33,27 @@
 
 :root[data-theme='light'] {
   color-scheme: light;
-  --bg: #f4f4f4;
+  /* White canvas + hairline borders; no gray slabs */
+  --bg: #ffffff;
   --card: #ffffff;
-  --raised: #f4f4f4;
-  --hover: #e9e9e9;
-  --text: #000000;
-  --muted: #666666;
-  --accent: #000000;
+  --raised: #ffffff;
+  --hover: color-mix(in srgb, var(--text) 4.5%, #ffffff);
+  --text: #0a0a0a;
+  --muted: #737373;
+  --border: color-mix(in srgb, var(--text) 10%, transparent);
+  --border-strong: color-mix(in srgb, var(--text) 18%, transparent);
+  --accent: #0a0a0a;
   --accent-contrast: #ffffff;
-  --grad-from: #000000;
-  --grad-to: #666666;
+  --grad-from: #0a0a0a;
+  --grad-to: #737373;
   --income: #059669;
   --expense: #dc2626;
-  --backdrop: rgba(0, 0, 0, 0.3);
+  --backdrop: rgba(0, 0, 0, 0.28);
   --shadow-menu:
-    0 16px 40px rgba(0, 0, 0, 0.14),
-    0 2px 8px rgba(0, 0, 0, 0.08);
-  --shadow-dialog: 0 24px 64px rgba(0, 0, 0, 0.18);
-  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M2.5 4.25L6 7.75L9.5 4.25' stroke='%23666666' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    0 16px 40px rgba(0, 0, 0, 0.1),
+    0 2px 8px rgba(0, 0, 0, 0.05);
+  --shadow-dialog: 0 24px 64px rgba(0, 0, 0, 0.12);
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M2.5 4.25L6 7.75L9.5 4.25' stroke='%23737373' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
 
 * {
@@ -89,7 +92,7 @@ button {
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
-[tabindex]:focus-visible {
+[tabindex]:not([class*='recharts-']):focus-visible {
   outline: 2px solid color-mix(in srgb, var(--text) 55%, transparent);
   outline-offset: 2px;
 }
@@ -136,6 +139,11 @@ select:focus-visible,
   padding: 2px;
   background: var(--raised);
   border-radius: 999px;
+}
+
+:root[data-theme='light'] .tabs {
+  background: color-mix(in srgb, var(--text) 3.5%, transparent);
+  border: 1px solid var(--border);
 }
 
 .tabs button {
@@ -751,6 +759,33 @@ select {
     background 200ms var(--ease);
 }
 
+:root[data-theme='light'] input[type='search'],
+:root[data-theme='light'] .manual-field input,
+:root[data-theme='light'] .manual-field .cat-select-trigger,
+:root[data-theme='light'] .account-name-input,
+:root[data-theme='light'] .account-iban-input {
+  background: transparent;
+}
+
+:root[data-theme='light'] select,
+:root[data-theme='light'] .manual-field select {
+  background-color: transparent;
+}
+
+:root[data-theme='light'] input[type='search']:hover,
+:root[data-theme='light'] .account-name-input:hover,
+:root[data-theme='light'] .account-name-input:focus,
+:root[data-theme='light'] .account-iban-input:focus,
+:root[data-theme='light'] .manual-field .cat-select-trigger:hover,
+:root[data-theme='light'] .manual-field .cat-select.open .cat-select-trigger {
+  background: color-mix(in srgb, var(--text) 3%, transparent);
+}
+
+:root[data-theme='light'] select:hover,
+:root[data-theme='light'] .manual-field select:hover {
+  background-color: color-mix(in srgb, var(--text) 3%, transparent);
+}
+
 select {
   appearance: none;
   -webkit-appearance: none;
@@ -1274,12 +1309,24 @@ tr.import-row-active {
   z-index: 1 !important;
 }
 
-/* Accessibility layer makes the SVG focusable — hide the browser focus ring */
+/* Recharts focusables (SVG / layers) — kill click/keyboard focus rings */
+.recharts-wrapper,
 .recharts-wrapper:focus,
 .recharts-wrapper:focus-visible,
+.recharts-surface,
 .recharts-surface:focus,
-.recharts-surface:focus-visible {
-  outline: none;
+.recharts-surface:focus-visible,
+.recharts-responsive-container,
+.card--chart [tabindex],
+.card--chart [role='application'],
+.chart-wrap [tabindex],
+.chart-wrap [role='application'],
+[class*='recharts-']:focus,
+[class*='recharts-']:focus-visible {
+  outline: none !important;
+  outline-offset: 0 !important;
+  box-shadow: none !important;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .trend-tooltip ul {
