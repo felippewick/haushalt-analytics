@@ -1,0 +1,81 @@
+# Build Mac + Windows installers and attach them to a GitHub Release.
+#
+# Triggers:
+#   - Push a version tag:  git tag v0.1.0 && git push origin v0.1.0
+#   - Actions → Release → Run workflow
+#
+# Creates a *draft* release by default. Review assets, then publish it.
+# Keep package.json, src-tauri/tauri.conf.json, and src-tauri/Cargo.toml versions in sync.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish-tauri:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            args: --target aarch64-apple-darwin
+          - platform: macos-latest
+            args: --target x86_64-apple-darwin
+          - platform: windows-latest
+            args: ''
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build and upload to GitHub Release
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'v__VERSION__' }}
+          releaseName: Haushalt Analytics ${{ github.ref_type == 'tag' && github.ref_name || 'v__VERSION__' }}
+          releaseBody: |
+            Offline household expense analytics (DKB / Trade Republic CSV).
+            Data stays on your computer — no cloud, no account.
+
+            ### Downloads
+            - **macOS Apple Silicon (M1/M2/M3/…):** `.dmg` with `aarch64` in the name
+            - **macOS Intel:** `.dmg` with `x64` / `x86_64` in the name
+            - **Windows:** `.msi` (recommended) or NSIS `.exe`
+
+            ### First open (unsigned builds)
+            Builds are not code-signed yet.
+            - **Mac:** right-click the app → **Open** (Gatekeeper)
+            - **Windows:** **More info** → **Run anyway** (SmartScreen)
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}

@@ -1,0 +1,16 @@
+"Kontonummer:";
+"DE12345678901234567890"
+
+"Von:";"01.01.2025"
+"Bis:";"31.01.2025"
+"Buchungsdatum";"Wertstellung";"Status";"Zahlungspflichtige*r";"Zahlungsempfänger*in";"Verwendungszweck";"Umsatztyp";"IBAN";"Betrag (€)";"Gläubiger-ID";"Mandatsreferenz";"Kundenreferenz"
+"15.01.2025";"15.01.2025";"Gebucht";"Arbeitgeber GmbH";"Max Mustermann";"Gehalt Januar";"Eingang";"DE11111111111111111111";"3200,00";"";"";""
+"03.01.2025";"03.01.2025";"Gebucht";"Max Mustermann";"Wohnungsgesellschaft Berlin";"Miete Januar 2025";"Ausgang";"DE22222222222222222222";"-950,00";"";"";""
+"05.01.2025";"05.01.2025";"Gebucht";"Max Mustermann";"REWE SAGT DANKE";"Kartenzahlung";"Ausgang";"DE33333333333333333333";"-54,32";"";"";""
+"06.01.2025";"06.01.2025";"Gebucht";"Max Mustermann";"LIDL FILIALE";"Kartenzahlung";"Ausgang";"DE33333333333333333333";"-23,10";"";"";""
+"07.01.2025";"07.01.2025";"Gebucht";"Max Mustermann";"Starbucks Coffee";"Kartenzahlung";"Ausgang";"DE33333333333333333333";"-4,80";"";"";""
+"08.01.2025";"08.01.2025";"Gebucht";"Max Mustermann";"BVG";"Ticket Abo";"Ausgang";"DE44444444444444444444";"-49,00";"";"";""
+"09.01.2025";"09.01.2025";"Gebucht";"Max Mustermann";"NETFLIX.COM";"Abo";"Ausgang";"DE55555555555555555555";"-13,99";"";"";""
+"10.01.2025";"10.01.2025";"Gebucht";"Max Mustermann";"Zalando SE";"Bestellung";"Ausgang";"DE66666666666666666666";"-89,90";"";"";""
+"12.01.2025";"12.01.2025";"Gebucht";"Max Mustermann";"Unknown Merchant XYZ";"Irgendwas";"Ausgang";"DE77777777777777777777";"-15,00";"";"";""
+"14.01.2025";"14.01.2025";"Gebucht";"Max Mustermann";"Mein Sparkonto";"Umbuchung";"Ausgang";"DE88888888888888888888";"-200,00";"";"";""
