@@ -290,9 +290,9 @@ export const de: Record<MessageKey, string> = {
     'Die Original-CSV wurde für diesen Import nicht gespeichert. Neue Importe behalten die Datei, damit du sie hier ansehen kannst.',
   'import.accountFor': 'Konto für {file}',
   'import.confirmDelete':
-    'Import „{file}“ für {account} löschen?\n\nDadurch werden {count} Buchung entfernt.',
+    'Import „{file}“ für {account} löschen? Dadurch werden {count} Buchung entfernt.',
   'import.confirmDeletePlural':
-    'Import „{file}“ für {account} löschen?\n\nDadurch werden {count} Buchungen entfernt.',
+    'Import „{file}“ für {account} löschen? Dadurch werden {count} Buchungen entfernt.',
   'import.notCsv.title': 'Dieser Dateityp kann nicht importiert werden',
   'import.notCsv.body':
     '„{file}“ sieht nach einer {ext}-Datei aus — nur CSV-Exporte werden unterstützt.',

@@ -36,6 +36,7 @@ export function CategoryManager({
   const [confirmDeleteId, setConfirmDeleteId] = useState<CategoryId | null>(
     null,
   )
+  const [confirmReset, setConfirmReset] = useState(false)
 
   const isDefault = useMemo(
     () => categoriesEqual(categories, cloneDefaultCategories()),
@@ -131,6 +132,31 @@ export function CategoryManager({
             </div>
           )}
 
+          {confirmReset && (
+            <div className="category-manager-confirm card">
+              <p>{t('settings.categories.resetConfirm')}</p>
+              <div className="category-manager-form-actions">
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setConfirmReset(false)}
+                >
+                  {t('settings.cancel')}
+                </button>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => {
+                    onReset()
+                    setConfirmReset(false)
+                  }}
+                >
+                  {t('settings.categories.reset')}
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="category-manager-toolbar">
             <button
               type="button"
@@ -143,11 +169,7 @@ export function CategoryManager({
               type="button"
               className="btn-secondary"
               disabled={isDefault}
-              onClick={() => {
-                if (window.confirm(t('settings.categories.resetConfirm'))) {
-                  onReset()
-                }
-              }}
+              onClick={() => setConfirmReset(true)}
             >
               {t('settings.categories.reset')}
             </button>

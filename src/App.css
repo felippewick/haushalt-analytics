@@ -1274,6 +1274,24 @@ tr.uncategorized {
   margin-top: 16px;
 }
 
+.import-delete-confirm {
+  margin: 0 0 16px;
+  padding: 12px 16px;
+  border-radius: var(--radius, 10px);
+  background: color-mix(in srgb, var(--expense) 10%, var(--surface, transparent));
+  border: 1px solid color-mix(in srgb, var(--expense) 35%, transparent);
+}
+
+.import-delete-confirm p {
+  margin: 0 0 12px;
+}
+
+.import-delete-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .import-history-card td strong {
   display: inline-block;
   max-width: 220px;

@@ -283,9 +283,9 @@ export const en = {
     'Original CSV wasn’t saved for this import. New imports keep the file so you can view it here.',
   'import.accountFor': 'Account for {file}',
   'import.confirmDelete':
-    'Delete import “{file}” for {account}?\n\nThis removes {count} transaction.',
+    'Delete import “{file}” for {account}? This removes {count} transaction.',
   'import.confirmDeletePlural':
-    'Delete import “{file}” for {account}?\n\nThis removes {count} transactions.',
+    'Delete import “{file}” for {account}? This removes {count} transactions.',
   'import.notCsv.title': 'This file type can’t be imported',
   'import.notCsv.body':
     '“{file}” looks like a {ext} file — only CSV exports are supported.',

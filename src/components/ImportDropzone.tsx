@@ -111,6 +111,7 @@ export function ImportDropzone({
     name: string
     ext: string
   } | null>(null)
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const [pendingMappings, setPendingMappings] = useState<Array<{
     fileName: string
     text: string
@@ -155,6 +156,12 @@ export function ImportDropzone({
       setViewingImportId(null)
     }
   }, [imports, viewingImportId])
+
+  useEffect(() => {
+    if (pendingDeleteId && !imports.some((b) => b.id === pendingDeleteId)) {
+      setPendingDeleteId(null)
+    }
+  }, [imports, pendingDeleteId])
 
   useEffect(() => {
     if (!viewingImportId || !viewRef.current) return
@@ -273,24 +280,23 @@ export function ImportDropzone({
     })
   }
 
-  const confirmDelete = (batch: ImportBatch) => {
-    const name = accountName(batch.accountId)
-    const key =
-      batch.addedCount === 1
-        ? 'import.confirmDelete'
-        : 'import.confirmDeletePlural'
-    const ok = window.confirm(
-      t(key, {
-        file: batch.fileName,
-        account: name,
-        count: batch.addedCount,
-      }),
-    )
-    if (ok) {
-      if (viewingImportId === batch.id) setViewingImportId(null)
-      onDeleteImport(batch.id)
-    }
+  // In-app confirm: window.confirm is a silent no-op on macOS Tauri WKWebView.
+  const requestDelete = (batch: ImportBatch) => {
+    setPendingDeleteId(batch.id)
   }
+
+  const cancelDelete = () => setPendingDeleteId(null)
+
+  const confirmDelete = () => {
+    if (!pendingDeleteId) return
+    if (viewingImportId === pendingDeleteId) setViewingImportId(null)
+    onDeleteImport(pendingDeleteId)
+    setPendingDeleteId(null)
+  }
+
+  const pendingDeleteBatch = pendingDeleteId
+    ? imports.find((b) => b.id === pendingDeleteId) ?? null
+    : null
 
   const openView = (batch: ImportBatch) => {
     setViewMode('transactions')
@@ -529,6 +535,38 @@ export function ImportDropzone({
         <p className="muted" style={{ marginTop: 0 }}>
           {t('import.historyIntro')}
         </p>
+        {pendingDeleteBatch && (
+          <div className="import-delete-confirm" role="alertdialog" aria-modal="true">
+            <p>
+              {t(
+                pendingDeleteBatch.addedCount === 1
+                  ? 'import.confirmDelete'
+                  : 'import.confirmDeletePlural',
+                {
+                  file: pendingDeleteBatch.fileName,
+                  account: accountName(pendingDeleteBatch.accountId),
+                  count: pendingDeleteBatch.addedCount,
+                },
+              )}
+            </p>
+            <div className="import-delete-confirm-actions">
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={cancelDelete}
+              >
+                {t('settings.cancel')}
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={confirmDelete}
+              >
+                {t('import.delete')}
+              </button>
+            </div>
+          </div>
+        )}
         <div className="table-wrap">
           <table>
             <thead>
@@ -547,7 +585,9 @@ export function ImportDropzone({
                 <tr
                   key={batch.id}
                   className={
-                    viewingImportId === batch.id ? 'import-row-active' : undefined
+                    viewingImportId === batch.id || pendingDeleteId === batch.id
+                      ? 'import-row-active'
+                      : undefined
                   }
                 >
                   <td className="nowrap">{formatImportedAt(batch.importedAt)}</td>
@@ -595,7 +635,7 @@ export function ImportDropzone({
                     <button
                       type="button"
                       className="linkish danger"
-                      onClick={() => confirmDelete(batch)}
+                      onClick={() => requestDelete(batch)}
                     >
                       {t('import.delete')}
                     </button>
