@@ -132,7 +132,7 @@ Add signing secrets and Tauri signing config when you are ready to ship publicly
 | `src/lib/categorize.ts` / `defaultRules.ts` | Rule engine + German defaults |
 | `src/lib/store.ts` | Load/save + merge/dedupe (Tauri FS or Vite `/api/store`) |
 | `vite-plugin-json-store.ts` | Dev-server `GET/POST /api/store` |
-| `data/store.json` | Browser/dev persistence |
+| `data/store.json` | Browser/dev persistence (**gitignored** — local only) |
 | `src-tauri/` | Tauri 2 desktop shell (Mac/Windows installers) |
 
 ## Scripts

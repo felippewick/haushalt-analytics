@@ -12,6 +12,14 @@ dist
 dist-ssr
 *.local
 
+# Local financial data (dev browser persistence) — never commit
+data/store.json
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
 # Tauri / Rust
 src-tauri/target
 src-tauri/gen/schemas
