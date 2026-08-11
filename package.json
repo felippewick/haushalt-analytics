@@ -9,8 +9,9 @@
     "typecheck": "tsc -b --pretty false",
     "lint": "oxlint",
     "preview": "vite preview",
-    "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build",
+    "model:download": "node scripts/download-model.mjs",
+    "tauri:dev": "npm run model:download && tauri dev",
+    "tauri:build": "npm run model:download && tauri build",
     "prepare": "husky"
   },
   "dependencies": {

@@ -585,13 +585,72 @@ td.col-purpose {
 }
 
 .dropzone.busy {
-  opacity: 0.6;
   pointer-events: none;
+  cursor: progress;
+  border-style: solid;
 }
 
 .dropzone-title {
   margin: 0;
   font-weight: 600;
+}
+
+.import-progress {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 14px;
+  max-width: 36rem;
+  text-align: left;
+}
+
+.import-spinner {
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-top: 2px;
+  flex: 0 0 auto;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--text);
+  border-radius: 50%;
+  animation: import-spin 800ms linear infinite;
+}
+
+.import-progress p {
+  margin: 0;
+}
+
+.import-progress-title {
+  font-weight: 600;
+}
+
+.import-progress p.import-progress-file {
+  margin-top: 2px;
+  font-size: 0.875rem;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.import-progress p.import-progress-detail,
+.import-progress p.import-progress-estimate {
+  margin-top: 8px;
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+  color: var(--muted);
+}
+
+.import-progress p.import-progress-estimate {
+  margin-top: 2px;
+}
+
+@keyframes import-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .import-spinner {
+    animation-duration: 1600ms;
+  }
 }
 
 .import-summary {

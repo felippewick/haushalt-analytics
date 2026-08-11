@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "uebrig",
   "version": "0.1.0",
-  "identifier": "com.uebrig.app",
+  "identifier": "com.uebrig.app.local",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
@@ -36,6 +36,7 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "resources": ["resources/models/*.gguf"],
     "macOS": {
       "minimumSystemVersion": "10.15"
     },

@@ -14,6 +14,7 @@ import { TransactionTable } from './TransactionTable'
 import { CsvMappingDialog } from './CsvMappingDialog'
 import { useLocale } from '../hooks/useLocale'
 import { translateError } from '../lib/i18n'
+import { llmSupported } from '../lib/llmCategorize'
 
 interface Props {
   accounts: Account[]
@@ -45,11 +46,14 @@ interface Props {
     categoryId: CategoryId,
     createMerchantRule?: boolean,
   ) => void
+  llmBusy?: boolean
   lastImport: {
     added: number
     duplicates: number
     accountId: string
     created?: boolean
+    llmAssigned?: number
+    llmProvider?: 'apple' | 'bundled'
   } | null
 }
 
@@ -88,23 +92,33 @@ export function ImportDropzone({
   onReassignImport,
   onAddAccount,
   onUpdateCategory,
+  llmBusy = false,
   lastImport,
 }: Props) {
   const { t } = useLocale()
   const inputRef = useRef<HTMLInputElement>(null)
   const viewRef = useRef<HTMLDivElement>(null)
+  const localAiAvailable = useMemo(() => llmSupported(), [])
   const [dragging, setDragging] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [importProgress, setImportProgress] = useState<{
+    fileName: string
+    index: number
+    total: number
+  } | null>(null)
   const [localError, setLocalError] = useState<string | null>(null)
   const [notCsvFile, setNotCsvFile] = useState<{
     name: string
     ext: string
   } | null>(null)
-  const [pendingMapping, setPendingMapping] = useState<{
+  const [pendingMappings, setPendingMappings] = useState<Array<{
     fileName: string
     text: string
     analysis: CsvAnalysis
-  } | null>(null)
+    index: number
+    total: number
+  }>>([])
+  const pendingMapping = pendingMappings[0] ?? null
   const [draftNames, setDraftNames] = useState<Record<string, string>>({})
   const [viewingImportId, setViewingImportId] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<'transactions' | 'csv'>(
@@ -147,35 +161,64 @@ export function ImportDropzone({
     viewRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [viewingImportId])
 
-  const onPickFile = async (file: File | undefined) => {
-    if (!file) return
+  const onPickFiles = async (files: File[]) => {
+    if (files.length === 0) return
     setLocalError(null)
     setNotCsvFile(null)
 
-    if (!file.name.toLowerCase().endsWith('.csv') && file.type !== 'text/csv') {
-      setNotCsvFile({ name: file.name, ext: fileExtension(file) })
+    const csvFiles = files.filter(
+      (file) =>
+        file.name.toLowerCase().endsWith('.csv') || file.type === 'text/csv',
+    )
+    const invalidFile = files.find((file) => !csvFiles.includes(file))
+    if (invalidFile) {
+      setNotCsvFile({
+        name: invalidFile.name,
+        ext: fileExtension(invalidFile),
+      })
+    }
+    if (csvFiles.length === 0) {
       if (inputRef.current) inputRef.current.value = ''
       return
     }
 
+    const mappings: typeof pendingMappings = []
     setBusy(true)
     try {
-      const text = await readFileAsText(file)
-      if (detectCsvFormat(text) === 'unknown') {
-        // Not a DKB / Trade Republic export — let the user map the columns
-        const analysis = analyzeCsv(text)
-        if (!analysis) {
-          setLocalError(t('error.unreadableCsv'))
-          return
+      for (let index = 0; index < csvFiles.length; index += 1) {
+        const file = csvFiles[index]
+        setImportProgress({
+          fileName: file.name,
+          index: index + 1,
+          total: csvFiles.length,
+        })
+        const text = await readFileAsText(file)
+        if (detectCsvFormat(text) === 'unknown') {
+          // Unknown exports are queued for column mapping after known files finish.
+          const analysis = analyzeCsv(text)
+          if (!analysis) {
+            setLocalError(t('error.unreadableCsv'))
+            continue
+          }
+          mappings.push({
+            fileName: file.name,
+            text,
+            analysis,
+            index: index + 1,
+            total: csvFiles.length,
+          })
+          continue
         }
-        setPendingMapping({ fileName: file.name, text, analysis })
-        return
+        await onImport(file)
       }
-      await onImport(file)
     } catch (e) {
       setLocalError(translateError(t, e))
     } finally {
+      if (mappings.length > 0) {
+        setPendingMappings((current) => [...current, ...mappings])
+      }
       setBusy(false)
+      setImportProgress(null)
       if (inputRef.current) inputRef.current.value = ''
     }
   }
@@ -186,20 +229,31 @@ export function ImportDropzone({
     accountName?: string
   }) => {
     if (!pendingMapping) return
-    await onImportGeneric({
+    setBusy(true)
+    setImportProgress({
       fileName: pendingMapping.fileName,
-      text: pendingMapping.text,
-      mapping: input.mapping,
-      accountId: input.accountId,
-      accountName: input.accountName,
+      index: pendingMapping.index,
+      total: pendingMapping.total,
     })
-    setPendingMapping(null)
+    try {
+      await onImportGeneric({
+        fileName: pendingMapping.fileName,
+        text: pendingMapping.text,
+        mapping: input.mapping,
+        accountId: input.accountId,
+        accountName: input.accountName,
+      })
+      setPendingMappings((current) => current.slice(1))
+    } finally {
+      setBusy(false)
+      setImportProgress(null)
+    }
   }
 
   const onDrop = (e: DragEvent) => {
     e.preventDefault()
     setDragging(false)
-    void onPickFile(e.dataTransfer.files[0])
+    void onPickFiles(Array.from(e.dataTransfer.files))
   }
 
   const lastAccount = lastImport
@@ -292,7 +346,7 @@ export function ImportDropzone({
         )}
 
         <div
-          className={`dropzone ${dragging ? 'dragging' : ''} ${busy ? 'busy' : ''}`}
+          className={`dropzone ${dragging ? 'dragging' : ''} ${busy || llmBusy ? 'busy' : ''}`}
           onDragOver={(e) => {
             e.preventDefault()
             setDragging(true)
@@ -310,11 +364,40 @@ export function ImportDropzone({
             ref={inputRef}
             type="file"
             accept=".csv,text/csv"
+            multiple
             hidden
-            onChange={(e) => void onPickFile(e.target.files?.[0])}
+            onChange={(e) =>
+              void onPickFiles(Array.from(e.target.files ?? []))
+            }
           />
-          {busy ? (
-            <p>{t('import.busy')}</p>
+          {busy || llmBusy ? (
+            <div className="import-progress" role="status" aria-live="polite">
+              <span className="import-spinner" aria-hidden="true" />
+              <div>
+                <p className="import-progress-title">
+                  {llmBusy ? t('import.busyLlm') : t('import.busy')}
+                </p>
+                {importProgress && (
+                  <p className="import-progress-file">
+                    {t('import.progressFile', {
+                      file: importProgress.fileName,
+                      index: importProgress.index,
+                      total: importProgress.total,
+                    })}
+                  </p>
+                )}
+                <p className="import-progress-detail">
+                  {localAiAvailable
+                    ? t('import.aiAvailable')
+                    : t('import.aiUnavailable')}
+                </p>
+                {localAiAvailable && (
+                  <p className="import-progress-estimate">
+                    {t('import.estimate')}
+                  </p>
+                )}
+              </div>
+            </div>
           ) : (
             <>
               <p className="dropzone-title">
@@ -351,6 +434,14 @@ export function ImportDropzone({
               added: lastImport.added,
               duplicates: lastImport.duplicates,
             })}
+            {lastImport.llmAssigned && lastImport.llmAssigned > 0
+              ? ` ${t(
+                  lastImport.llmProvider === 'apple'
+                    ? 'import.llmAssignedApple'
+                    : 'import.llmAssigned',
+                  { count: lastImport.llmAssigned },
+                )}`
+              : null}
           </p>
         )}
 
@@ -640,7 +731,7 @@ export function ImportDropzone({
         fileName={pendingMapping?.fileName ?? ''}
         analysis={pendingMapping?.analysis ?? null}
         accounts={isDemo ? [] : bankAccounts}
-        onCancel={() => setPendingMapping(null)}
+        onCancel={() => setPendingMappings((current) => current.slice(1))}
         onConfirm={confirmMapping}
       />
     </>

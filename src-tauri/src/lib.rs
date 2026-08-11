@@ -1,7 +1,14 @@
+mod apple_fm;
+mod llm;
+
+use llm::{categorize_with_llm, llm_status, LlmState};
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
     .plugin(tauri_plugin_fs::init())
+    .manage(LlmState::new())
+    .invoke_handler(tauri::generate_handler![llm_status, categorize_with_llm])
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(

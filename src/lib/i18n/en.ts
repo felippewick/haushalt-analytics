@@ -230,12 +230,24 @@ export const en = {
   'import.demoHint':
     'Sample data is currently shown. Importing your CSV will replace it with your real transactions.',
   'import.busy': 'Importing…',
+  'import.busyLlm': 'Categorizing transactions…',
+  'import.progressFile': '{file} · file {index} of {total}',
+  'import.aiAvailable':
+    'Unrecognized transactions are categorized automatically with private, on-device AI. Your data never leaves this computer.',
+  'import.aiUnavailable':
+    'Transactions are categorized automatically using local rules. On-device AI is used when available.',
+  'import.estimate':
+    'Usually under a minute per file; large files may take a few minutes.',
   'import.dropDemo': 'Drop your real CSV here',
-  'import.drop': 'Drop your CSV here',
-  'import.browse': 'or click to browse — known IBANs reuse the same account',
+  'import.drop': 'Drop your CSV files here',
+  'import.browse':
+    'or click to select one or more files — known IBANs reuse the same account',
   'import.newAccount': 'New account created',
   'import.matchedAccount': 'Matched existing account',
   'import.addedSkipped': 'added {added} · skipped {duplicates} duplicates',
+  'import.llmAssigned': '· {count} categorized by on-device AI',
+  'import.llmAssignedApple':
+    '· {count} categorized by Apple Intelligence',
   'import.accountsTitle': 'Accounts — name your IBANs',
   'import.accountPlaceholder': 'e.g. My DKB account',
   'import.accountNameAria': 'Name for {id}',

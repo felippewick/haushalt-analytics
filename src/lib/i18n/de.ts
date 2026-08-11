@@ -235,14 +235,25 @@ export const de: Record<MessageKey, string> = {
   'import.demoHint':
     'Aktuell werden Beispieldaten angezeigt. Beim Import deiner CSV werden sie durch deine echten Buchungen ersetzt.',
   'import.busy': 'Importiere…',
+  'import.busyLlm': 'Buchungen werden kategorisiert…',
+  'import.progressFile': '{file} · Datei {index} von {total}',
+  'import.aiAvailable':
+    'Nicht erkannte Buchungen werden automatisch mit privater On-Device-KI kategorisiert. Deine Daten verlassen diesen Computer nicht.',
+  'import.aiUnavailable':
+    'Buchungen werden automatisch mit lokalen Regeln kategorisiert. On-Device-KI wird verwendet, wenn sie verfügbar ist.',
+  'import.estimate':
+    'Meist unter einer Minute pro Datei; große Dateien können einige Minuten dauern.',
   'import.dropDemo': 'Echte CSV hier ablegen',
-  'import.drop': 'CSV hier ablegen',
+  'import.drop': 'CSV-Dateien hier ablegen',
   'import.browse':
-    'oder klicken zum Auswählen — bekannte IBANs nutzen dasselbe Konto',
+    'oder klicken, um eine oder mehrere Dateien auszuwählen — bekannte IBANs nutzen dasselbe Konto',
   'import.newAccount': 'Neues Konto angelegt',
   'import.matchedAccount': 'Bestehendes Konto zugeordnet',
   'import.addedSkipped':
     '{added} hinzugefügt · {duplicates} Duplikate übersprungen',
+  'import.llmAssigned': '· {count} per On-Device-KI kategorisiert',
+  'import.llmAssignedApple':
+    '· {count} per Apple Intelligence kategorisiert',
   'import.accountsTitle': 'Konten — IBANs benennen',
   'import.accountPlaceholder': 'z. B. Mein DKB Konto',
   'import.accountNameAria': 'Name für {id}',

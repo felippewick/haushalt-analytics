@@ -180,7 +180,16 @@ export function categorizeAll(
       }
       return tx
     }
-    return { ...tx, categoryId: categorizeTransaction(tx, rules) }
+    const nextId = categorizeTransaction(tx, rules)
+    // Keep prior auto-assignments (e.g. local LLM) when no rule matches.
+    // Matching rules still win so new merchant rules can refine LLM guesses.
+    if (
+      nextId === 'uncategorized' &&
+      tx.categoryId !== 'uncategorized'
+    ) {
+      return tx
+    }
+    return { ...tx, categoryId: nextId }
   })
 }
 

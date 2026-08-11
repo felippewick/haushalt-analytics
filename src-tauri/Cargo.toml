@@ -21,3 +21,7 @@ log = "0.4"
 tauri = { version = "2.11.3", features = [] }
 tauri-plugin-log = "2"
 tauri-plugin-fs = "2.5.1"
+encoding_rs = "0.8"
+# Bundled local LLM (GGUF). Metal is auto-enabled on Apple Silicon via
+# llama-cpp-2's target-specific deps. OpenMP disabled to avoid extra runtime deps.
+llama-cpp-2 = { version = "0.1.154", default-features = false, features = ["common"] }

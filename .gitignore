@@ -24,6 +24,10 @@ data/store.json
 src-tauri/target
 src-tauri/gen/schemas
 
+# Bundled local LLM weights (downloaded via npm run model:download)
+src-tauri/resources/models/*.gguf
+src-tauri/resources/models/*.partial
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

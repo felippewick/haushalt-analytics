@@ -33,6 +33,7 @@ The app expects the current (post-2023) format: semicolon-separated, German date
 
 - **Import** with automatic dedupe (safe to re-export overlapping periods)
 - **Auto-categorization** via keyword rules (REWE → Groceries, BVG → Transport, etc.)
+- **On-device AI** (desktop app): after rules, categorizes remaining rows locally — prefers **Apple Foundation Models** (Apple Intelligence on macOS 26+) and falls back to a bundled ~380 MB model. No cloud, no extra install.
 - **Manual overrides** in the transactions table; check **always** to remember a merchant
 - **Overview**: stacked expense chart for a selectable month range (defaults to the last 12 months when enough history exists); click a month for income/expenses, category donut, and biggest expenses. Months missing data for an account are marked on the chart.
 - **Accounts**: import CSVs into named accounts (DKB, Trade Republic, …); aggregate all by default or filter in the header
@@ -51,6 +52,7 @@ Internal transfers should be tagged **Transfer** so they don’t inflate spendin
 
 - [Node.js](https://nodejs.org/) 20+
 - [Rust](https://www.rust-lang.org/tools/install) (for the desktop shell)
+- [CMake](https://cmake.org/) 3.15+ (for the bundled llama.cpp engine — `brew install cmake` on Mac)
 - On Mac: Xcode Command Line Tools (`xcode-select --install`)
 - On Windows: [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) with the “Desktop development with C++” workload, plus WebView2 (usually preinstalled on Windows 10/11)
 
@@ -69,8 +71,9 @@ Open the URL Vite prints (usually http://localhost:5173). Persistence uses the V
 
 ```bash
 npm install
-npm run tauri:dev      # Vite + native window
-npm run tauri:build    # production installers
+npm run model:download   # once — fetches the ~380 MB GGUF into src-tauri/resources/models/
+npm run tauri:dev        # Vite + native window (also downloads the model if missing)
+npm run tauri:build      # production installers (bundles the model into .dmg / .msi)
 ```
 
 Installers are written under:
@@ -130,6 +133,10 @@ Add signing secrets and Tauri signing config when you are ready to ship publicly
 |------|------|
 | `src/lib/dkbParser.ts` | DKB CSV parsing |
 | `src/lib/categorize.ts` / `defaultRules.ts` | Rule engine + German defaults |
+| `src/lib/llmCategorize.ts` | Desktop bridge to on-device AI |
+| `src-tauri/src/llm.rs` | Prefers Apple FM, else llama.cpp GGUF |
+| `src-tauri/apple/` | Swift bridge to Apple Foundation Models |
+| `src-tauri/resources/models/` | Fallback GGUF (gitignored; `npm run model:download`) |
 | `src/lib/store.ts` | Load/save + merge/dedupe (Tauri FS or Vite `/api/store`) |
 | `vite-plugin-json-store.ts` | Dev-server `GET/POST /api/store` |
 | `data/store.json` | Browser/dev persistence (**gitignored** — local only) |
@@ -138,13 +145,14 @@ Add signing secrets and Tauri signing config when you are ready to ship publicly
 ## Scripts
 
 ```bash
+npm run model:download # fetch bundled GGUF (~380 MB) for desktop builds
 npm run dev          # browser + JSON persistence
 npm run typecheck    # TypeScript only (same gate as pre-commit / CI build)
 npm run lint         # oxlint
 npm run build        # frontend production build (typecheck + vite)
 npm run preview      # preview build (persistence middleware included)
-npm run tauri:dev    # desktop app (dev)
-npm run tauri:build  # desktop installers
+npm run tauri:dev    # desktop app (dev; downloads model if needed)
+npm run tauri:build  # desktop installers (bundles model)
 ```
 
 ## Notes

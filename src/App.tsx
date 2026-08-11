@@ -32,6 +32,7 @@ export default function App() {
     saving,
     error,
     lastImport,
+    llmBusy,
     importFile,
     importGenericFile,
     updateCategory,
@@ -251,6 +252,7 @@ export default function App() {
           onReassignImport={reassignImport}
           onAddAccount={addAccount}
           onUpdateCategory={updateCategory}
+          llmBusy={llmBusy}
           lastImport={lastImport}
         />
       )}

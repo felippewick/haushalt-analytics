@@ -1,27 +1,32 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { AppStore, CategoryId, ImportResult } from '../lib/types'
 import type { CategoryInput } from '../lib/categories'
 import { syncCategoryRegistry } from '../lib/categories'
 import {
+  applyLlmAssignments,
+  categorizeWithLlm,
+  llmSupported,
+} from '../lib/llmCategorize'
+import {
+  addAccountByIban,
+  addCategory,
+  addManualExpense,
+  deleteCategory,
+  deleteImport,
+  deleteTransaction,
   emptyStore,
   importCsvFile,
   importGenericCsv,
   loadStore,
+  reassignImport,
+  renameAccount,
+  resetCategories,
   saveStore,
   setTransactionCategory,
-  addManualExpense,
-  deleteTransaction,
-  deleteImport,
-  renameAccount,
-  reassignImport,
-  addAccountByIban,
-  addCategory,
-  type GenericImportInput,
   updateCategoryDefinition,
-  deleteCategory,
-  resetCategories,
+  type GenericImportInput,
   type ManualExpenseInput,
 } from '../lib/store'
+import type { AppStore, CategoryId, ImportResult } from '../lib/types'
 
 export function useAppStore() {
   const [store, setStore] = useState<AppStore>(emptyStore)
@@ -29,6 +34,7 @@ export function useAppStore() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [lastImport, setLastImport] = useState<ImportResult | null>(null)
+  const [llmBusy, setLlmBusy] = useState(false)
   const skipNextSave = useRef(true)
   const storeRef = useRef(store)
   storeRef.current = store
@@ -86,39 +92,125 @@ export function useAppStore() {
     }
   }, [store, loading])
 
-  const doImport = useCallback(async (file: File) => {
-    setError(null)
-    try {
-      const { store: next, result } = await importCsvFile(
-        file,
-        storeRef.current,
-      )
-      setStore(next)
-      setLastImport(result)
-      return result
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : 'error.importFailed'
-      setError(msg)
-      throw e
-    }
-  }, [])
+  /** Second pass: Apple Foundation Models (preferred) or bundled GGUF. */
+  const runLlmPass = useCallback(
+    async (
+      nextStore: AppStore,
+      result: ImportResult & { created?: boolean; importId?: string },
+    ) => {
+      if (!llmSupported() || !result.importId || result.added === 0) {
+        return { store: nextStore, llmAssigned: 0, llmProvider: undefined as
+          | 'apple'
+          | 'bundled'
+          | undefined }
+      }
 
-  const doImportGeneric = useCallback(async (input: GenericImportInput) => {
-    setError(null)
-    try {
-      const { store: next, result } = importGenericCsv(
-        input,
-        storeRef.current,
+      const uncategorized = nextStore.transactions.filter(
+        (tx) =>
+          tx.importId === result.importId &&
+          !tx.categoryOverride &&
+          tx.categoryId === 'uncategorized',
       )
-      setStore(next)
-      setLastImport(result)
-      return result
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : 'error.importFailed'
-      setError(msg)
-      throw e
-    }
-  }, [])
+      if (uncategorized.length === 0) {
+        return {
+          store: nextStore,
+          llmAssigned: 0,
+          llmProvider: undefined as 'apple' | 'bundled' | undefined,
+        }
+      }
+
+      setLlmBusy(true)
+      try {
+        const categoryIds = (nextStore.categories ?? []).map((c) => c.id)
+        const { assignments, provider } = await categorizeWithLlm(
+          uncategorized,
+          categoryIds,
+        )
+        const validIds = new Set(categoryIds)
+        const { transactions, assigned } = applyLlmAssignments(
+          nextStore.transactions,
+          assignments,
+          validIds,
+        )
+        if (assigned === 0) {
+          return {
+            store: nextStore,
+            llmAssigned: 0,
+            llmProvider: undefined as 'apple' | 'bundled' | undefined,
+          }
+        }
+        const llmProvider =
+          provider === 'apple' ? ('apple' as const) : ('bundled' as const)
+        return {
+          store: { ...nextStore, transactions },
+          llmAssigned: assigned,
+          llmProvider,
+        }
+      } catch (e) {
+        console.warn('Local LLM categorization skipped:', e)
+        return {
+          store: nextStore,
+          llmAssigned: 0,
+          llmProvider: undefined as 'apple' | 'bundled' | undefined,
+        }
+      } finally {
+        setLlmBusy(false)
+      }
+    },
+    [],
+  )
+
+  const doImport = useCallback(
+    async (file: File) => {
+      setError(null)
+      try {
+        const { store: next, result } = await importCsvFile(
+          file,
+          storeRef.current,
+        )
+        const { store: withLlm, llmAssigned, llmProvider } = await runLlmPass(
+          next,
+          result,
+        )
+        storeRef.current = withLlm
+        setStore(withLlm)
+        const enriched = { ...result, llmAssigned, llmProvider }
+        setLastImport(enriched)
+        return enriched
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'error.importFailed'
+        setError(msg)
+        throw e
+      }
+    },
+    [runLlmPass],
+  )
+
+  const doImportGeneric = useCallback(
+    async (input: GenericImportInput) => {
+      setError(null)
+      try {
+        const { store: next, result } = importGenericCsv(
+          input,
+          storeRef.current,
+        )
+        const { store: withLlm, llmAssigned, llmProvider } = await runLlmPass(
+          next,
+          result,
+        )
+        storeRef.current = withLlm
+        setStore(withLlm)
+        const enriched = { ...result, llmAssigned, llmProvider }
+        setLastImport(enriched)
+        return enriched
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'error.importFailed'
+        setError(msg)
+        throw e
+      }
+    },
+    [runLlmPass],
+  )
 
   const updateCategory = useCallback(
     (
@@ -204,6 +296,7 @@ export function useAppStore() {
     saving,
     error,
     lastImport,
+    llmBusy,
     setLastImport,
     importFile: doImport,
     importGenericFile: doImportGeneric,

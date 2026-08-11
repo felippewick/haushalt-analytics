@@ -134,6 +134,10 @@ export interface ImportResult {
   accountId: string
   created?: boolean
   importId?: string
+  /** Rows categorized by the bundled local LLM after rules. */
+  llmAssigned?: number
+  /** `apple` | `bundled` when llmAssigned > 0 */
+  llmProvider?: 'apple' | 'bundled'
   transactions: Transaction[]
 }
 

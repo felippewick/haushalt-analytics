@@ -56,6 +56,14 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Install CMake (llama.cpp)
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: '3.31.x'
+
+      - name: Download bundled LLM model
+        run: npm run model:download
+
       - name: Build and upload to GitHub Release
         uses: tauri-apps/tauri-action@v1
         env:
@@ -66,6 +74,8 @@ jobs:
           releaseBody: |
             Offline household expense analytics (DKB / Trade Republic CSV).
             Data stays on your computer — no cloud, no account.
+
+            Includes on-device auto-categorization (Apple Intelligence when available, else bundled ~380 MB model).
 
             ### Downloads
             - **macOS Apple Silicon (M1/M2/M3/…):** `.dmg` with `aarch64` in the name
@@ -78,4 +88,4 @@ jobs:
             - **Windows:** **More info** → **Run anyway** (SmartScreen)
           releaseDraft: true
           prerelease: false
-          args: ${{ matrix.args }}
+          args: ${{ matrix.args }} --config src-tauri/tauri.release.conf.json
