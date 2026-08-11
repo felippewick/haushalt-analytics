@@ -58,47 +58,30 @@ fn compile_apple_fm() {
       println!("cargo:rustc-link-arg=-weak_framework");
       println!("cargo:rustc-link-arg=FoundationModels");
       println!("cargo:rustc-cfg=uebrig_apple_fm");
+      // Swift concurrency: with deployment target < 12, ld rewrites the load
+      // path to @rpath/libswift_Concurrency.dylib and the app aborts at launch
+      // unless an rpath is present. tauri-build only sets the deployment target
+      // for non-dev (`tauri build`), so set it here too (keep in sync with
+      // bundle.macOS.minimumSystemVersion in tauri.conf.json).
+      println!("cargo:rustc-env=MACOSX_DEPLOYMENT_TARGET=12.0");
+      if let Ok(sdk) = Command::new("xcrun")
+        .args(["--sdk", "macosx", "--show-sdk-path"])
+        .output()
+      {
+        let sdk_root = String::from_utf8_lossy(&sdk.stdout).trim().to_string();
+        let sdk_swift = PathBuf::from(&sdk_root).join("usr/lib/swift");
+        if sdk_swift.is_dir() {
+          println!("cargo:rustc-link-search=native={}", sdk_swift.display());
+        }
+      }
+      // Fallback if anything still records @rpath.
+      println!("cargo:rustc-link-arg=-Wl,-rpath,/usr/lib/swift");
       // Swift runtime
       println!("cargo:rustc-link-lib=swiftCore");
       println!("cargo:rustc-link-lib=swiftFoundation");
       println!("cargo:rustc-link-lib=swiftDispatch");
       println!("cargo:rustc-link-lib=swiftObjectiveC");
       println!("cargo:rustc-link-lib=swift_Concurrency");
-      if let Ok(toolchain) = Command::new("xcrun")
-        .args(["--find", "swift"])
-        .output()
-      {
-        let swift_path = String::from_utf8_lossy(&toolchain.stdout);
-        if let Some(parent) = PathBuf::from(swift_path.trim()).parent() {
-          // ../lib/swift/macosx
-          let lib_swift = parent
-            .parent()
-            .map(|p| p.join("lib/swift/macosx"))
-            .unwrap_or_else(|| parent.join("../lib/swift/macosx"));
-          if lib_swift.is_dir() {
-            println!("cargo:rustc-link-search=native={}", lib_swift.display());
-          }
-        }
-      }
-      // Xcode toolchain swift libs
-      if let Ok(out) = Command::new("xcrun")
-        .args(["--show-sdk-platform-path"])
-        .output()
-      {
-        let _ = out;
-      }
-      if let Ok(developer) = Command::new("xcode-select").arg("-p").output() {
-        let root = String::from_utf8_lossy(&developer.stdout).trim().to_string();
-        let candidates = [
-          format!("{root}/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/macosx"),
-          format!("{root}/usr/lib/swift/macosx"),
-        ];
-        for c in candidates {
-          if PathBuf::from(&c).is_dir() {
-            println!("cargo:rustc-link-search=native={c}");
-          }
-        }
-      }
     }
     Ok(s) => {
       println!(
