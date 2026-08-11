@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "Haushalt Analytics",
+  "productName": "uebrig",
   "version": "0.1.0",
-  "identifier": "com.haushalt.analytics",
+  "identifier": "com.uebrig.app",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Haushalt Analytics",
+        "title": "uebrig",
         "width": 1280,
         "height": 800,
         "minWidth": 900,

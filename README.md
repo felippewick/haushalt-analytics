@@ -1,4 +1,4 @@
-# Haushalt Analytics
+# uebrig
 
 Local app to visualize and categorize expenses from **DKB Girokonto** and **Trade Republic** CSV exports. All data stays on your computer — no cloud, no database, no account.
 
@@ -8,7 +8,7 @@ Local app to visualize and categorize expenses from **DKB Girokonto** and **Trad
    - **Mac (Apple Silicon):** `.dmg` with `aarch64` in the filename
    - **Mac (Intel):** `.dmg` with `x64` / `x86_64` in the filename
    - **Windows:** `.msi` (recommended) or `.exe`
-2. Install and open **Haushalt Analytics**.
+2. Install and open **uebrig**.
 3. Go to **Import** and drop a bank CSV.
 
 Your data is saved automatically on this machine. Nothing is uploaded.
@@ -88,8 +88,8 @@ Cross-compiling Mac ↔ Windows is not supported in the default setup — build 
 
 | OS | `store.json` location |
 |----|------------------------|
-| macOS | `~/Library/Application Support/com.haushalt.analytics/store.json` |
-| Windows | `%APPDATA%\com.haushalt.analytics\store.json` |
+| macOS | `~/Library/Application Support/com.uebrig.app/store.json` |
+| Windows | `%APPDATA%\com.uebrig.app\store.json` |
 
 This is **not** the same file as repo `data/store.json`. Dev browser data is not auto-migrated into the packaged app.
 

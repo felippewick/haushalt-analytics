@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { format } from 'date-fns'
-import { Monitor, Moon, Sun } from '@phosphor-icons/react'
+import { GearSix, Monitor, Moon, Sun } from '@phosphor-icons/react'
 import { useAppStore } from './hooks/useAppStore'
 import { useLocale, useSyncCategories } from './hooks/useLocale'
 import { useTheme } from './hooks/useTheme'
@@ -20,6 +20,7 @@ import {
 } from './lib/analytics'
 import { filterTransactionsByAccount } from './lib/store'
 import { translateError } from './lib/i18n'
+import appIconUrl from './assets/app-logo.png'
 import './App.css'
 
 type Tab = 'trends' | 'transactions' | 'import'
@@ -105,39 +106,44 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <div className="header-actions">
-        <button
-          type="button"
-          className="header-action-btn"
-          onClick={cycleTheme}
-          title={t('app.theme.aria')}
-          aria-label={t('app.theme.aria')}
-        >
-          {preference === 'system' ? (
-            <Monitor aria-hidden="true" />
-          ) : preference === 'light' ? (
-            <Sun aria-hidden="true" />
-          ) : (
-            <Moon aria-hidden="true" />
-          )}
-        </button>
-        <button
-          type="button"
-          className="header-action-btn"
-          onClick={() => setSettingsOpen(true)}
-          title={t('app.settingsTitle')}
-        >
-          {t('app.settings')}
-        </button>
-      </div>
-
       <header className="app-header">
-        <div>
-          <h1>Haushalt Analytics</h1>
-          <p className="muted">
-            {t('app.tagline')}
-            {saving ? ` · ${t('app.saving')}` : ''}
-          </p>
+        <div className="app-header-top">
+          <div className="app-brand">
+            <img className="app-logo" src={appIconUrl} alt="" aria-hidden="true" />
+            <div className="app-brand-text">
+              <h1>uebrig</h1>
+              <p className="muted">
+                {t('app.tagline')}
+                {saving ? ` · ${t('app.saving')}` : ''}
+              </p>
+            </div>
+          </div>
+          <div className="header-actions">
+            <button
+              type="button"
+              className="header-action-btn"
+              onClick={cycleTheme}
+              title={t('app.theme.aria')}
+              aria-label={t('app.theme.aria')}
+            >
+              {preference === 'system' ? (
+                <Monitor aria-hidden="true" />
+              ) : preference === 'light' ? (
+                <Sun aria-hidden="true" />
+              ) : (
+                <Moon aria-hidden="true" />
+              )}
+            </button>
+            <button
+              type="button"
+              className="header-action-btn header-action-btn--labeled"
+              onClick={() => setSettingsOpen(true)}
+              title={t('app.settingsTitle')}
+            >
+              <GearSix aria-hidden="true" />
+              {t('app.settings')}
+            </button>
+          </div>
         </div>
         <div className="header-controls">
           <AccountFilter

@@ -106,17 +106,46 @@ select:focus-visible,
 
 .app-header {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  justify-content: space-between;
+  flex-direction: column;
+  align-items: stretch;
   gap: 16px;
   margin-bottom: 24px;
 }
 
+.app-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+}
+
+.app-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.app-logo {
+  display: block;
+  width: 48px;
+  height: 48px;
+  flex: 0 0 auto;
+  border-radius: 11px;
+}
+
+.app-brand-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
 .app-header h1 {
   margin: 0;
-  font-size: 1.875rem;
-  line-height: 2.25rem;
+  font-size: 1.625rem;
+  line-height: 1.15;
   font-weight: 600;
   letter-spacing: -0.03em;
   background: linear-gradient(90deg, var(--grad-from), var(--grad-to));
@@ -128,7 +157,9 @@ select:focus-visible,
 }
 
 .app-header .muted {
-  font-size: 0.875rem;
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.35;
 }
 
 /* Segmented tab control: one raised track, active pill in white */
@@ -1710,12 +1741,10 @@ tr.import-row-active {
 }
 
 .header-actions {
-  position: absolute;
-  top: 16px;
-  right: 24px;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .header-action-btn {
@@ -1730,10 +1759,17 @@ tr.import-row-active {
   transition: color 200ms var(--ease);
 }
 
+.header-action-btn--labeled {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .header-action-btn svg {
   display: block;
   width: 18px;
   height: 18px;
+  flex-shrink: 0;
 }
 
 .header-action-btn:hover {

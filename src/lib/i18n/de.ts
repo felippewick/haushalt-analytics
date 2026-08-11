@@ -4,7 +4,7 @@ import { en } from './en'
 export const de: Record<MessageKey, string> = {
   'app.loading': 'Laden…',
   'app.saving': 'speichern…',
-  'app.tagline': 'Von Grund auf privat — läuft vollständig auf diesem Computer',
+  'app.tagline': 'Was bleibt, zählt.',
   'app.settings': 'Einstellungen',
   'app.settingsTitle': 'Daten exportieren oder importieren',
   'app.tab.trends': 'Übersicht',
@@ -47,7 +47,7 @@ export const de: Record<MessageKey, string> = {
   'settings.language.hint':
     'Betrifft nur die Oberfläche — Beschriftungen, Menüs und Monatsnamen. Deine Buchungen und Kategorien bleiben unverändert.',
   'settings.language.detail':
-    'Wähle die Sprache für Haushalt Analytics. Die Auswahl wird auf diesem Gerät gespeichert und gilt sofort.',
+    'Wähle die Sprache für uebrig. Die Auswahl wird auf diesem Gerät gespeichert und gilt sofort.',
   'settings.categories.title': 'Kategorien',
   'settings.categories.detail':
     'Die mitgelieferten Kategorien sind die Voreinstellung. Füge eigene hinzu, benenne bestehende um, ändere Farben oder lösche ungenutzte. Buchungen einer gelöschten Kategorie wandern nach Unkategorisiert.',
@@ -80,7 +80,7 @@ export const de: Record<MessageKey, string> = {
   'settings.intro':
     'Exportiere oder importiere store.json, um Daten selbst zwischen Geräten zu übertragen — es gibt keinen Cloud-Sync. Der Import nutzt eine intelligente Zusammenführung; erst nach Bestätigung der Diff wird geschrieben.',
   'settings.privacy':
-    'Haushalt Analytics funktioniert vollständig offline. Deine Finanzen bleiben nur auf diesem Computer — nichts wird hochgeladen, und Konten werden nicht geräteübergreifend verknüpft.',
+    'uebrig funktioniert vollständig offline. Deine Finanzen bleiben nur auf diesem Computer — nichts wird hochgeladen, und Konten werden nicht geräteübergreifend verknüpft.',
   'settings.export': 'Daten exportieren',
   'settings.import': 'Daten importieren…',
   'settings.reading': 'Lesen…',
@@ -117,7 +117,7 @@ export const de: Record<MessageKey, string> = {
   'error.invalidJson':
     'Ungültiges JSON — bitte eine gültige store.json wählen.',
   'error.notStoreFile':
-    'Diese Datei sieht nicht nach einer Haushalt-Analytics-store.json aus.',
+    'Diese Datei sieht nicht nach einer uebrig-store.json aus.',
   'error.importFailed': 'Import fehlgeschlagen',
   'error.loadStore': 'Store konnte nicht geladen werden',
   'error.saveStore': 'Speichern fehlgeschlagen',

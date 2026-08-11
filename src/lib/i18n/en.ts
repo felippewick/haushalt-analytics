@@ -1,7 +1,7 @@
 export const en = {
   'app.loading': 'Loading…',
   'app.saving': 'saving…',
-  'app.tagline': 'Private by design — runs entirely on this computer',
+  'app.tagline': 'What remains, counts.',
   'app.settings': 'Settings',
   'app.settingsTitle': 'Export or import store data',
   'app.tab.trends': 'Overview',
@@ -44,7 +44,7 @@ export const en = {
   'settings.language.hint':
     'Affects the interface only — labels, menus, and month names. Your transactions and categories stay unchanged.',
   'settings.language.detail':
-    'Pick the language for Haushalt Analytics. The choice is saved on this device and applies immediately.',
+    'Pick the language for uebrig. The choice is saved on this device and applies immediately.',
   'settings.categories.title': 'Categories',
   'settings.categories.detail':
     'The built-in categories are the default. Add your own, rename or recolor existing ones, or delete categories you do not use. Transactions in a deleted category move to Uncategorized.',
@@ -77,7 +77,7 @@ export const en = {
   'settings.intro':
     'Export or import store.json to move data between devices yourself — there is no cloud sync. Import uses a smart merge; nothing is written until you confirm the diff.',
   'settings.privacy':
-    'Haushalt Analytics works fully offline. Your finances stay on this computer only — nothing is uploaded, and accounts are not linked across devices.',
+    'uebrig works fully offline. Your finances stay on this computer only — nothing is uploaded, and accounts are not linked across devices.',
   'settings.export': 'Export data',
   'settings.import': 'Import data…',
   'settings.reading': 'Reading…',
@@ -112,7 +112,7 @@ export const en = {
   'error.couldNotReadFile': 'Could not read the selected file.',
   'error.invalidJson': 'Invalid JSON — please select a valid store.json file.',
   'error.notStoreFile':
-    'This file does not look like a Haushalt Analytics store.json.',
+    'This file does not look like a uebrig store.json.',
   'error.importFailed': 'Import failed',
   'error.loadStore': 'Failed to load store',
   'error.saveStore': 'Failed to save',

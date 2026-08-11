@@ -297,6 +297,7 @@ export function Dashboard({
                       innerRadius={50}
                       outerRadius={90}
                       paddingAngle={2}
+                      rootTabIndex={-1}
                     >
                       {expenseChart.map((entry) => (
                         <Cell
@@ -342,6 +343,7 @@ export function Dashboard({
                       innerRadius={50}
                       outerRadius={90}
                       paddingAngle={2}
+                      rootTabIndex={-1}
                     >
                       {incomeChart.map((entry) => (
                         <Cell
