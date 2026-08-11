@@ -133,7 +133,7 @@ export function categorizeTransaction(
   for (const rule of sorted) {
     if (rule.amount != null && rule.amount !== tx.amount) continue
     if (!matchesRule(text, rule)) continue
-    // Income rules must not tag outflows (e.g. "Felippe…" → salary on transfers)
+    // Income rules must not tag outflows (e.g. own-name salary rule on transfers)
     if (getCategoryMap()[rule.categoryId]?.isIncome && tx.amount < 0) continue
     return rule.categoryId
   }

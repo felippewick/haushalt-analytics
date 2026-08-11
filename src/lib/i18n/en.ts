@@ -223,7 +223,7 @@ export const en = {
 
   'import.title': 'Import CSV',
   'import.intro':
-    'Drop a DKB or Trade Republic export. Accounts are matched automatically by IBAN (or as Trade Republic). Give each one a name below — e.g. Joint account, Felippe DKB, Anni Konto, Felippe TR.',
+    'Drop a DKB or Trade Republic export. Accounts are matched automatically by IBAN (or as Trade Republic). Give each one a name below — e.g. Joint account, My DKB, Partner account, Trade Republic.',
   'import.privacy':
     'Files are read only on this computer. Nothing is uploaded, and there is no cloud account — your transactions stay private on this machine.',
   'import.demoHint':
@@ -236,7 +236,7 @@ export const en = {
   'import.matchedAccount': 'Matched existing account',
   'import.addedSkipped': 'added {added} · skipped {duplicates} duplicates',
   'import.accountsTitle': 'Accounts — name your IBANs',
-  'import.accountPlaceholder': 'e.g. Felippe DKB Konto',
+  'import.accountPlaceholder': 'e.g. My DKB account',
   'import.accountNameAria': 'Name for {id}',
   'import.addAccountIntro': 'Add an account by IBAN to assign imports to it.',
   'import.addAccountName': 'New account name',

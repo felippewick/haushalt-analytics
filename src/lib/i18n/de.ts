@@ -228,7 +228,7 @@ export const de: Record<MessageKey, string> = {
 
   'import.title': 'CSV importieren',
   'import.intro':
-    'Lege einen DKB- oder Trade-Republic-Export ab. Konten werden automatisch per IBAN (oder als Trade Republic) zugeordnet. Gib jedem unten einen Namen — z. B. Gemeinschaftskonto, Felippe DKB, Anni Konto, Felippe TR.',
+    'Lege einen DKB- oder Trade-Republic-Export ab. Konten werden automatisch per IBAN (oder als Trade Republic) zugeordnet. Gib jedem unten einen Namen — z. B. Gemeinschaftskonto, Mein DKB, Partnerkonto, Trade Republic.',
   'import.privacy':
     'Dateien werden nur auf diesem Computer gelesen. Nichts wird hochgeladen, und es gibt kein Cloud-Konto — deine Buchungen bleiben privat auf diesem Gerät.',
   'import.demoHint':
@@ -243,7 +243,7 @@ export const de: Record<MessageKey, string> = {
   'import.addedSkipped':
     '{added} hinzugefügt · {duplicates} Duplikate übersprungen',
   'import.accountsTitle': 'Konten — IBANs benennen',
-  'import.accountPlaceholder': 'z. B. Felippe DKB Konto',
+  'import.accountPlaceholder': 'z. B. Mein DKB Konto',
   'import.accountNameAria': 'Name für {id}',
   'import.addAccountIntro':
     'Konto per IBAN hinzufügen, um Importe zuzuordnen.',
