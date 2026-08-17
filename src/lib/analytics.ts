@@ -27,12 +27,22 @@ export interface MonthRange {
 
 export type FlowFilter = 'all' | TransactionFlow
 
+export type CategoryFilterValue = CategoryId[] | 'all'
+
 export interface TransactionFilterOptions {
   query?: string
-  categoryId?: CategoryId | 'all'
+  categoryIds?: CategoryFilterValue
   flow?: FlowFilter
   /** Used so search can match account display names. */
   accounts?: Account[]
+}
+
+export function matchesCategoryFilter(
+  categoryId: CategoryId,
+  filter: CategoryFilterValue = 'all',
+): boolean {
+  if (filter === 'all') return true
+  return filter.includes(categoryId)
 }
 
 function accountSearchText(accounts: Account[], accountId: string): string {
@@ -46,14 +56,14 @@ export function filterTransactions(
   transactions: Transaction[],
   {
     query = '',
-    categoryId = 'all',
+    categoryIds = 'all',
     flow = 'all',
     accounts = [],
   }: TransactionFilterOptions = {},
 ): Transaction[] {
   const q = query.trim().toLowerCase()
   return transactions.filter((t) => {
-    if (categoryId !== 'all' && t.categoryId !== categoryId) return false
+    if (!matchesCategoryFilter(t.categoryId, categoryIds)) return false
     if (flow !== 'all' && transactionFlow(t) !== flow) return false
     if (!q) return true
     const accName = accountSearchText(accounts, t.accountId).toLowerCase()
@@ -244,11 +254,11 @@ export function clampRangeToData(
   return { from, to }
 }
 
-/** Contiguous months from data min→max, newest first — for month pickers. */
+/** Contiguous months from data min→max, oldest first — for month pickers. */
 export function selectableMonths(transactions: Transaction[]): string[] {
   const span = dataMonthSpan(transactions)
   if (!span) return []
-  return monthsInRange(span.from, span.to).reverse()
+  return monthsInRange(span.from, span.to)
 }
 
 /** Months shown in the trends chart window (always contiguous). */
@@ -353,7 +363,7 @@ export interface MonthSummary {
 
 /**
  * Income and expenses stay gross (no per-category netting).
- * Outflows → expenses; inflows (salary, refunds, …) → income.
+ * Outflows → expenses; inflows (salary, investments, …) → income.
  * Only `net` (saldo) subtracts them. Transfers / excluded categories ignored.
  * Matches the trends chart expense total for the same month.
  */
@@ -439,6 +449,7 @@ export function buildTrendData(
     format(parseISO(`${m}-01`), 'MMM yy'),
   coverage?: MonthCoverage[],
   accountName?: (accountId: string) => string,
+  onlyCategoryIds?: CategoryId[],
 ): { data: TrendPoint[]; categoryIds: CategoryId[] } {
   // Trends chart is expenses-only (no income / transfers)
   const expenseTxs = transactions.filter((t) => transactionFlow(t) === 'expense')
@@ -450,11 +461,13 @@ export function buildTrendData(
   )
 
   const map = getCategoryMap()
+  const allow = onlyCategoryIds ? new Set(onlyCategoryIds) : null
   const used = new Set<CategoryId>()
   const data: TrendPoint[] = months.map((m) => {
     const monthTx = filterByMonth(expenseTxs, m)
     const catTotals = new Map<CategoryId, number>()
     for (const tx of monthTx) {
+      if (allow && !allow.has(tx.categoryId)) continue
       if (!countsTowardTotals(tx.categoryId)) continue
       if (map[tx.categoryId]?.isIncome) continue
       const prev = catTotals.get(tx.categoryId) ?? 0
@@ -496,7 +509,10 @@ export function buildTrendData(
     .map((c) => c.id)
     .filter(
       (id) =>
-        used.has(id) && !map[id]?.isIncome && !map[id]?.excludeFromTotals,
+        used.has(id) &&
+        !map[id]?.isIncome &&
+        !map[id]?.excludeFromTotals &&
+        (!allow || allow.has(id)),
     )
   // Include orphaned ids still present on transactions
   for (const id of used) {
@@ -515,19 +531,20 @@ export interface CategoryTrendPoint {
   missingAccountNames: string
 }
 
-/** Monthly expense total for one category + average and linear trend line. */
+/** Monthly expense total for one or more categories + average and linear trend line. */
 export function buildCategoryTrendData(
   transactions: Transaction[],
-  categoryId: CategoryId,
+  categoryId: CategoryId | CategoryId[],
   range: MonthRange,
   formatLabel: (yyyyMm: string) => string = (m) =>
     format(parseISO(`${m}-01`), 'MMM yy'),
   coverage?: MonthCoverage[],
   accountName?: (accountId: string) => string,
 ): { data: CategoryTrendPoint[]; average: number } {
+  const ids = new Set(Array.isArray(categoryId) ? categoryId : [categoryId])
   const expenseTxs = transactions.filter(
     (t) =>
-      transactionFlow(t) === 'expense' && t.categoryId === categoryId,
+      transactionFlow(t) === 'expense' && ids.has(t.categoryId),
   )
   const months = monthsInRange(range.from, range.to)
   if (months.length === 0) return { data: [], average: 0 }
@@ -588,13 +605,14 @@ export function buildCategoryTrendData(
 
 export function transactionsForCategory(
   transactions: Transaction[],
-  categoryId: CategoryId,
+  categoryId: CategoryId | CategoryId[],
   yyyyMm?: string,
   flow: 'expense' | 'income' | 'all' = 'all',
 ): Transaction[] {
+  const ids = new Set(Array.isArray(categoryId) ? categoryId : [categoryId])
   return transactions
     .filter((t) => {
-      if (t.categoryId !== categoryId) return false
+      if (!ids.has(t.categoryId)) return false
       if (yyyyMm && monthKey(t.date) !== yyyyMm) return false
       if (flow !== 'all' && transactionFlow(t) !== flow) return false
       return true

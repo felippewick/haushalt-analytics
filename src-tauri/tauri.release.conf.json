@@ -1,4 +1,7 @@
 {
   "productName": "uebrig",
-  "identifier": "com.uebrig.app"
+  "identifier": "com.uebrig.app",
+  "bundle": {
+    "createUpdaterArtifacts": true
+  }
 }

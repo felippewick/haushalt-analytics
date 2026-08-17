@@ -6,6 +6,10 @@
 #
 # Creates a *draft* release by default. Review assets, then publish it.
 # Keep package.json, src-tauri/tauri.conf.json, and src-tauri/Cargo.toml versions in sync.
+#
+# In-app updates: set secret TAURI_SIGNING_PRIVATE_KEY (minisign private key).
+# After you publish the draft, installed apps poll latest.json on this release.
+# GitHub must serve those assets without auth — private repos 404 for users.
 
 name: Release
 
@@ -68,6 +72,7 @@ jobs:
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'v__VERSION__' }}
           releaseName: uebrig ${{ github.ref_type == 'tag' && github.ref_name || 'v__VERSION__' }}
@@ -75,17 +80,21 @@ jobs:
             Offline household expense analytics (DKB / Trade Republic CSV).
             Data stays on your computer — no cloud, no account.
 
-            Includes on-device auto-categorization (Apple Intelligence when available, else bundled ~380 MB model).
+            Includes on-device auto-categorization (Apple Intelligence when available, else bundled ~940 MB Qwen 1.5B).
 
             ### Downloads
             - **macOS Apple Silicon (M1/M2/M3/…):** `.dmg` with `aarch64` in the name
             - **macOS Intel:** `.dmg` with `x64` / `x86_64` in the name
             - **Windows:** `.msi` (recommended) or NSIS `.exe`
 
+            After this first install, later versions can be applied from **Settings → Updates** (needs a published release with public assets).
+
             ### First open (unsigned builds)
             Builds are not code-signed yet.
-            - **Mac:** right-click the app → **Open** (Gatekeeper)
+            - **Mac:** open the `.dmg`, drag **uebrig** onto **Applications**, then right-click → **Open** (Gatekeeper). Spotlight only finds the app after it lives in Applications.
             - **Windows:** **More info** → **Run anyway** (SmartScreen)
           releaseDraft: true
           prerelease: false
+          includeUpdaterJson: true
+          updaterJsonPreferNsis: true
           args: ${{ matrix.args }} --config src-tauri/tauri.release.conf.json

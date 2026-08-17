@@ -1,12 +1,16 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { CaretDown, Check } from '@phosphor-icons/react'
 import type { Category, CategoryId } from '../lib/types'
+import { groupedCategories } from '../lib/categories'
 import { useLocale } from '../hooks/useLocale'
 import { CategoryIcon } from './CategoryIcon'
 
 interface Props {
   value: CategoryId
   counterparty?: string
+  /** When set, hide income cats on expenses and expense cats on income. */
+  amount?: number
   onChange: (categoryId: CategoryId, createMerchantRule: boolean) => void
   ariaLabel?: string
 }
@@ -14,14 +18,19 @@ interface Props {
 interface MenuPos {
   top: number
   left: number
+  width: number
+  maxHeight: number
 }
 
 const MENU_WIDTH = 520
 const MENU_GAP = 8
+const VIEWPORT_PAD = 8
+const MIN_MENU_HEIGHT = 160
 
 export function CategorySelect({
   value,
   counterparty,
+  amount,
   onChange,
   ariaLabel,
 }: Props) {
@@ -36,40 +45,48 @@ export function CategorySelect({
   const canRemember = Boolean(counterparty?.trim())
   const selectedLabel = categoryLabel(value)
 
-  const expenseCats = categories.filter(
-    (c) =>
-      !c.isIncome &&
-      !c.excludeFromTotals &&
-      c.id !== 'uncategorized' &&
-      c.id !== 'other',
-  )
-  const incomeCats = categories.filter((c) => c.isIncome)
-  const excludedCats = categories.filter((c) => c.excludeFromTotals)
-  const otherCats = categories.filter(
+  const grouped = groupedCategories(categories)
+  const catchAllFromExpenses = grouped.expenses.filter(
     (c) => c.id === 'uncategorized' || c.id === 'other',
   )
+  const expenseCats =
+    amount != null && amount >= 0 ? [] : grouped.expenses
+  const incomeCats =
+    amount != null && amount < 0
+      ? []
+      : amount != null && amount >= 0
+        ? [...grouped.income, ...catchAllFromExpenses]
+        : grouped.income
+  const excludedCats = grouped.excluded
 
   const updateMenuPos = () => {
     const el = triggerRef.current
     if (!el) return
     const rect = el.getBoundingClientRect()
-    const menuHeight = menuRef.current?.offsetHeight ?? 360
-    const width = Math.min(MENU_WIDTH, window.innerWidth - 16)
+    const width = Math.min(MENU_WIDTH, window.innerWidth - VIEWPORT_PAD * 2)
+    const naturalHeight = menuRef.current?.scrollHeight ?? 360
 
     let left = rect.right + MENU_GAP
-    if (left + width > window.innerWidth - 8) {
-      left = Math.max(8, rect.left - width - MENU_GAP)
+    if (left + width > window.innerWidth - VIEWPORT_PAD) {
+      left = rect.left - width - MENU_GAP
     }
-    if (left + width > window.innerWidth - 8) {
-      left = Math.max(8, window.innerWidth - width - 8)
-    }
+    left = Math.min(
+      Math.max(VIEWPORT_PAD, left),
+      window.innerWidth - width - VIEWPORT_PAD,
+    )
 
-    let top = rect.top
-    if (top + menuHeight > window.innerHeight - 8) {
-      top = Math.max(8, window.innerHeight - menuHeight - 8)
-    }
+    const spaceBelow = window.innerHeight - rect.top - VIEWPORT_PAD
+    const spaceAbove = rect.bottom - VIEWPORT_PAD
+    const openUpward =
+      spaceBelow < MIN_MENU_HEIGHT && spaceAbove > spaceBelow
 
-    setMenuPos({ top, left })
+    const available = openUpward ? spaceAbove : spaceBelow
+    const maxHeight = Math.min(naturalHeight, Math.max(available, 0))
+    const top = openUpward
+      ? Math.max(VIEWPORT_PAD, rect.bottom - maxHeight)
+      : rect.top
+
+    setMenuPos({ top, left, width, maxHeight })
   }
 
   useLayoutEffect(() => {
@@ -136,23 +153,25 @@ export function CategorySelect({
         />
       </button>
 
-      {open && (
-        <div
-          ref={menuRef}
-          className="cat-select-menu"
-          role="listbox"
-          id={listId}
-          tabIndex={-1}
-          style={
-            menuPos
-              ? {
-                  top: menuPos.top,
-                  left: menuPos.left,
-                  width: Math.min(MENU_WIDTH, window.innerWidth - 16),
-                }
-              : { visibility: 'hidden', top: 0, left: 0 }
-          }
-        >
+      {open &&
+        createPortal(
+          <div
+            ref={menuRef}
+            className="cat-select-menu"
+            role="listbox"
+            id={listId}
+            tabIndex={-1}
+            style={
+              menuPos
+                ? {
+                    top: menuPos.top,
+                    left: menuPos.left,
+                    width: menuPos.width,
+                    maxHeight: menuPos.maxHeight,
+                  }
+                : { visibility: 'hidden', top: 0, left: 0 }
+            }
+          >
           {canRemember && (
             <button
               type="button"
@@ -190,15 +209,10 @@ export function CategorySelect({
               value={value}
               onPick={pick}
             />
-            <OptionGroup
-              label={t('catGroup.other')}
-              options={otherCats}
-              value={value}
-              onPick={pick}
-            />
           </div>
-        </div>
-      )}
+          </div>,
+          document.body,
+        )}
     </div>
   )
 }

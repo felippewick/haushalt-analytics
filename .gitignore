@@ -19,6 +19,7 @@ data/store.json
 .env
 .env.*
 !.env.example
+*.key
 
 # Tauri / Rust
 src-tauri/target

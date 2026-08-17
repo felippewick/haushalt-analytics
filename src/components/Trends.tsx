@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import {
   BarChart,
   Bar,
@@ -6,7 +6,6 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
   ResponsiveContainer,
   LabelList,
   Cell,
@@ -16,7 +15,7 @@ import {
 } from 'recharts'
 import type { MouseHandlerDataParam } from 'recharts'
 import { parseISO, format } from 'date-fns'
-import type { Account, CategoryId, Transaction } from '../lib/types'
+import type { Account, Category, CategoryId, Transaction } from '../lib/types'
 import {
   accountCoverageGaps,
   buildCategoryTrendData,
@@ -33,11 +32,13 @@ import { transactionFlow } from '../lib/categorize'
 import { Dashboard, MONTH_TX_LIST_ID } from './Dashboard'
 import { ManualExpenses } from './ManualExpenses'
 import { TransactionTable } from './TransactionTable'
+import { CategoryFilter, type CategoryFilterValue } from './CategoryFilter'
 import { CategoryIcon } from './CategoryIcon'
 import type { ManualExpenseInput } from '../lib/store'
 import { useLocale } from '../hooks/useLocale'
 import { CHART_THEMES, useTheme } from '../hooks/useTheme'
 import type { TranslateFn } from '../lib/i18n'
+import type { AutoCategorizePreview, LlmProgress, LlmSuggestion } from '../lib/llmCategorize'
 
 interface Props {
   transactions: Transaction[]
@@ -53,6 +54,10 @@ interface Props {
     categoryId: CategoryId,
     createMerchantRule?: boolean,
   ) => void
+  onAutoCategorize?: (txs: Transaction[]) => Promise<AutoCategorizePreview>
+  onApplySuggestions?: (suggestions: LlmSuggestion[]) => void
+  llmBusy?: boolean
+  llmProgress?: LlmProgress | null
 }
 
 function monthFromChartClick(
@@ -84,16 +89,22 @@ function TrendTooltip({
   label,
   t,
   formatEur,
+  hoveredCategoryId,
 }: {
   active?: boolean
   payload?: TooltipEntry[]
   label?: string
   t: TranslateFn
   formatEur: (n: number) => string
+  hoveredCategoryId?: CategoryId | null
 }) {
   if (!active || !payload?.length) return null
   const rows = payload.filter(
-    (p) => p.dataKey !== 'trend' && Number(p.value) > 0,
+    (p) =>
+      p.dataKey !== 'trend' &&
+      p.dataKey !== 'total' &&
+      p.dataKey !== BAR_LABEL_STACK &&
+      Number(p.value) > 0,
   )
   const total = rows.reduce((sum, p) => sum + Number(p.value ?? 0), 0)
   const trend = payload.find((p) => p.dataKey === 'trend')
@@ -111,11 +122,20 @@ function TrendTooltip({
   const pointAvg = point?.average
   const missing = point?.missingAccountNames
   return (
-    <div className="trend-tooltip">
+    <div
+      className={`trend-tooltip${hoveredCategoryId ? ' has-hover' : ''}`}
+    >
       <strong>{label}</strong>
       <ul>
         {rows.map((p) => (
-          <li key={String(p.dataKey ?? p.name)}>
+          <li
+            key={String(p.dataKey ?? p.name)}
+            className={
+              hoveredCategoryId && p.dataKey === hoveredCategoryId
+                ? 'is-hovered'
+                : undefined
+            }
+          >
             {typeof p.dataKey === 'string' && p.dataKey in getCategoryMap() ? (
               <CategoryIcon
                 categoryId={p.dataKey as CategoryId}
@@ -152,7 +172,45 @@ function TrendTooltip({
         </div>
       )}
       <div className="muted small">{t('trends.tooltip.click')}</div>
+      <div className="muted small">{t('trends.tooltip.dblclick')}</div>
     </div>
+  )
+}
+
+/** Tiny stack slice so sum labels sit on top of the bar, not in a grouped column. */
+const BAR_LABEL_STACK = '__barLabel'
+
+function barCenterX(x?: number | string, width?: number | string) {
+  return Number(x ?? 0) + Number(width ?? 0) / 2
+}
+
+function barSumLabel(
+  formatCompactEur: (n: number) => string,
+  fill: string,
+  props: {
+    x?: unknown
+    y?: unknown
+    width?: unknown
+    value?: unknown
+  },
+) {
+  const n = Number(props.value)
+  if (!(n > 0)) return null
+  return (
+    <text
+      x={barCenterX(
+        props.x as number | string | undefined,
+        props.width as number | string | undefined,
+      )}
+      y={Number(props.y ?? 0) - 6}
+      textAnchor="middle"
+      dominantBaseline="auto"
+      fontSize={12}
+      fontWeight={600}
+      fill={fill}
+    >
+      {formatCompactEur(n)}
+    </text>
   )
 }
 
@@ -165,7 +223,7 @@ function makeGapMarkerLabel(data: { gap: number }[]) {
   }) {
     const entry = data[props.index ?? -1]
     if (!entry || entry.gap !== 1) return null
-    const x = Number(props.x ?? 0) + Number(props.width ?? 0) / 2
+    const x = barCenterX(props.x, props.width)
     const y = Number(props.y ?? 0) - 4
     return (
       <g className="trend-gap-marker" aria-hidden>
@@ -180,6 +238,102 @@ function barOpacity(selectedMonth: string, entryMonth: string, gap: number) {
   return gap === 1 ? base * 0.55 : base
 }
 
+function sliceOpacity(
+  selectedMonth: string,
+  entryMonth: string,
+  gap: number,
+  dimmed: boolean,
+) {
+  const base = barOpacity(selectedMonth, entryMonth, gap)
+  return dimmed ? base * 0.38 : base
+}
+
+interface HoveredSlice {
+  categoryId: CategoryId
+  index: number
+  x: number
+  width: number
+}
+
+function readBarGeom(item: unknown): Pick<HoveredSlice, 'x' | 'width'> | null {
+  if (!item || typeof item !== 'object') return null
+  const o = item as { x?: unknown; width?: unknown }
+  const x = Number(o.x)
+  const width = Number(o.width)
+  if (![x, width].every(Number.isFinite)) return null
+  return { x, width }
+}
+
+function tooltipAnchor(slice: HoveredSlice, plotWidth: number) {
+  const gap = 24
+  const cardW = 228
+  const legendW = plotWidth > 0 ? Math.min(160, plotWidth * 0.22) : 140
+  const rightX = slice.x + slice.width + gap
+  const overflowRight = plotWidth > 0 && rightX + cardW > plotWidth - legendW
+  return {
+    x: overflowRight ? Math.max(8, slice.x - cardW - gap) : rightX,
+    y: 8,
+  }
+}
+
+function TrendCategoryLegend({
+  items,
+  categoryFilter,
+  hoveredId,
+  onPick,
+  labelFor,
+  ariaLabel,
+  showOnlyTitle,
+  showAllTitle,
+}: {
+  items: Category[]
+  categoryFilter: CategoryFilterValue
+  hoveredId?: CategoryId | null
+  onPick: (id: CategoryId) => void
+  labelFor: (id: CategoryId) => string
+  ariaLabel: string
+  showOnlyTitle: (category: string) => string
+  showAllTitle: string
+}) {
+  if (items.length === 0) return null
+  const isolated =
+    categoryFilter !== 'all' && categoryFilter.length === 1
+      ? categoryFilter[0]
+      : null
+  const selected =
+    categoryFilter === 'all' ? null : new Set(categoryFilter)
+
+  return (
+    <ul className="trend-legend" aria-label={ariaLabel}>
+      {items.map((c) => {
+        const on =
+          selected === null || selected.has(c.id)
+        const isIsolated = isolated === c.id
+        const hovered = hoveredId === c.id
+        return (
+          <li key={c.id}>
+            <button
+              type="button"
+              className={`trend-legend-item${on ? '' : ' is-off'}${
+                isIsolated || hovered ? ' is-on' : ''
+              }`}
+              title={
+                isIsolated
+                  ? showAllTitle
+                  : showOnlyTitle(labelFor(c.id))
+              }
+              onClick={() => onPick(c.id)}
+            >
+              <CategoryIcon categoryId={c.id} badge size={11} />
+              <span>{labelFor(c.id)}</span>
+            </button>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
 export function Trends({
   transactions,
   accounts,
@@ -190,6 +344,10 @@ export function Trends({
   onAddManual,
   onDeleteManual,
   onUpdateCategory,
+  onAutoCategorize,
+  onApplySuggestions,
+  llmBusy = false,
+  llmProgress = null,
 }: Props) {
   const {
     t,
@@ -202,10 +360,15 @@ export function Trends({
   } = useLocale()
   const { resolved } = useTheme()
   const chart = CHART_THEMES[resolved]
-  const [categoryFilter, setCategoryFilter] = useState<CategoryId | 'all'>(
-    'all',
-  )
+  const [categoryFilter, setCategoryFilter] =
+    useState<CategoryFilterValue>('all')
   const [listScope, setListScope] = useState<'month' | 'all'>('all')
+  const [hoveredSlice, setHoveredSlice] = useState<HoveredSlice | null>(null)
+  const plotRef = useRef<HTMLDivElement>(null)
+  const hoveredSliceRef = useRef<HoveredSlice | null>(null)
+  const monthClickTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastCategoryToggleAt = useRef(0)
+  hoveredSliceRef.current = hoveredSlice
 
   const accountName = useMemo(() => {
     const map = new Map(accounts.map((a) => [a.id, a.name]))
@@ -227,30 +390,37 @@ export function Trends({
         formatChartMonth,
         coverage,
         accountName,
+        categoryFilter === 'all' || categoryFilter.length === 1
+          ? undefined
+          : categoryFilter,
       ),
-    [transactions, periodRange, formatChartMonth, coverage, accountName],
-  )
-  const categoryTrend = useMemo(
-    () =>
-      categoryFilter === 'all'
-        ? null
-        : buildCategoryTrendData(
-            transactions,
-            categoryFilter,
-            periodRange,
-            formatChartMonth,
-            coverage,
-            accountName,
-          ),
     [
+      transactions,
+      periodRange,
+      formatChartMonth,
+      coverage,
+      accountName,
+      categoryFilter,
+    ],
+  )
+  const categoryTrend = useMemo(() => {
+    if (categoryFilter === 'all' || categoryFilter.length === 0) return null
+    return buildCategoryTrendData(
       transactions,
       categoryFilter,
       periodRange,
       formatChartMonth,
       coverage,
       accountName,
-    ],
-  )
+    )
+  }, [
+    transactions,
+    categoryFilter,
+    periodRange,
+    formatChartMonth,
+    coverage,
+    accountName,
+  ])
 
   const summary = useMemo(
     () =>
@@ -264,7 +434,7 @@ export function Trends({
   )
 
   const categoryOptions = useMemo(() => {
-    const used = new Set(stacked.categoryIds)
+    const used = new Set<CategoryId>()
     for (const tx of transactions) {
       if (transactionFlow(tx) === 'expense') used.add(tx.categoryId)
     }
@@ -275,10 +445,10 @@ export function Trends({
         !c.excludeFromTotals &&
         c.id !== 'uncategorized',
     )
-  }, [stacked.categoryIds, transactions, categories])
+  }, [transactions, categories])
 
   const categoryTxs = useMemo(() => {
-    if (categoryFilter === 'all') return []
+    if (categoryFilter === 'all' || categoryFilter.length === 0) return []
     return transactionsForCategory(
       transactions,
       categoryFilter,
@@ -288,10 +458,11 @@ export function Trends({
   }, [transactions, categoryFilter, listScope, selectedMonth])
 
   const categoryMonthSpend = useMemo(() => {
-    if (categoryFilter === 'all') return null
+    if (categoryFilter === 'all' || categoryFilter.length === 0) return null
+    const ids = new Set(categoryFilter)
     const monthRows = transactions.filter(
       (tx) =>
-        tx.categoryId === categoryFilter &&
+        ids.has(tx.categoryId) &&
         transactionFlow(tx) === 'expense' &&
         (!selectedMonth || tx.date.startsWith(selectedMonth)),
     )
@@ -336,31 +507,119 @@ export function Trends({
     )
   }
 
-  const selectedCatLabel =
-    categoryFilter === 'all' ? null : categoryLabel(categoryFilter)
-  const selectedCatColor =
-    categoryFilter === 'all'
-      ? null
-      : (getCategoryMap()[categoryFilter]?.color ?? '#999')
+  const selectedIds =
+    categoryFilter === 'all' ? [] : categoryFilter
+  const showAllCategories = categoryFilter === 'all'
+  const showSingleTrend = selectedIds.length === 1
 
-  const chartLegend = (
-    <Legend
-      position="right"
-      layout="vertical"
-      wrapperStyle={{
-        paddingLeft: 12,
-        fontSize: 12,
-        zIndex: 1,
-        color: chart.legend,
-      }}
+  const selectMonthSoon = (month: string) => {
+    if (monthClickTimer.current) clearTimeout(monthClickTimer.current)
+    monthClickTimer.current = setTimeout(() => {
+      monthClickTimer.current = null
+      onSelectMonth(month)
+    }, 280)
+  }
+
+  const toggleCategoryFromChart = (id: CategoryId) => {
+    if (monthClickTimer.current) {
+      clearTimeout(monthClickTimer.current)
+      monthClickTimer.current = null
+    }
+    setHoveredSlice(null)
+    setCategoryFilter(
+      categoryFilter !== 'all' &&
+        categoryFilter.length === 1 &&
+        categoryFilter[0] === id
+        ? 'all'
+        : [id],
+    )
+  }
+
+  const toggleCategoryOnce = (id: CategoryId) => {
+    const now = Date.now()
+    if (now - lastCategoryToggleAt.current < 400) return
+    lastCategoryToggleAt.current = now
+    toggleCategoryFromChart(id)
+  }
+
+  const onBarActivate =
+    (
+      categoryId: CategoryId,
+      monthAtIndex: (index: number) => string | undefined,
+    ) =>
+    (
+      item: { payload?: { month?: string } } | undefined,
+      barIndex: number,
+      event?: { detail?: number },
+    ) => {
+      if ((event?.detail ?? 1) >= 2) {
+        toggleCategoryOnce(categoryId)
+        return
+      }
+      const month = item?.payload?.month ?? monthAtIndex(barIndex)
+      if (typeof month === 'string') selectMonthSoon(month)
+    }
+
+  const onPlotDoubleClick = () => {
+    const id = hoveredSliceRef.current?.categoryId
+    if (id) toggleCategoryOnce(id)
+  }
+
+  const slicePointerHandlers = (categoryId: CategoryId) => ({
+    onMouseEnter: (item: unknown, index: number) => {
+      const geom = readBarGeom(item)
+      setHoveredSlice({
+        categoryId,
+        index,
+        x: geom?.x ?? 0,
+        width: geom?.width ?? 0,
+      })
+    },
+  })
+
+  const selectedCatLabel = (() => {
+    if (showAllCategories) return null
+    if (selectedIds.length === 0) return t('categoryFilter.none')
+    if (selectedIds.length <= 2) {
+      return selectedIds.map((id) => categoryLabel(id)).join(', ')
+    }
+    return t('categoryFilter.selected', { count: selectedIds.length })
+  })()
+  const selectedCatColor = showSingleTrend
+    ? (getCategoryMap()[selectedIds[0] ?? '']?.color ?? '#999')
+    : null
+
+  const categoryLegend = (
+    <TrendCategoryLegend
+      items={categoryOptions}
+      categoryFilter={categoryFilter}
+      hoveredId={hoveredSlice?.categoryId}
+      onPick={toggleCategoryFromChart}
+      labelFor={categoryLabel}
+      ariaLabel={t('trends.legendAria')}
+      showOnlyTitle={(category) =>
+        t('trends.legendShowOnly', { category })
+      }
+      showAllTitle={t('trends.legendShowAll')}
     />
   )
 
+  const tooltipPosition = hoveredSlice
+    ? tooltipAnchor(hoveredSlice, plotRef.current?.clientWidth ?? 0)
+    : undefined
+
   const chartTooltip = (
     <Tooltip
-      content={<TrendTooltip t={t} formatEur={formatEur} />}
-      wrapperStyle={{ zIndex: 30, outline: 'none' }}
-      allowEscapeViewBox={{ x: true, y: true }}
+      content={
+        <TrendTooltip
+          t={t}
+          formatEur={formatEur}
+          hoveredCategoryId={hoveredSlice?.categoryId}
+        />
+      }
+      position={tooltipPosition}
+      isAnimationActive={false}
+      wrapperStyle={{ zIndex: 30, outline: 'none', pointerEvents: 'none' }}
     />
   )
 
@@ -399,30 +658,16 @@ export function Trends({
   )
 
   const categoryControl = (
-    <label className="period-range-field">
+    <div className="period-range-field">
       <span className="muted small">{t('trends.category')}</span>
-      <div className="cat-filter-control">
-        <span className="cat-filter-icon" aria-hidden>
-          {categoryFilter !== 'all' ? (
-            <CategoryIcon categoryId={categoryFilter} badge size={13} />
-          ) : null}
-        </span>
-        <select
-          value={categoryFilter}
-          onChange={(e) =>
-            setCategoryFilter(e.target.value as CategoryId | 'all')
-          }
-          aria-label={t('trends.filterCategory')}
-        >
-          <option value="all">{t('trends.allExpenseCategories')}</option>
-          {categoryOptions.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.label}
-            </option>
-          ))}
-        </select>
-      </div>
-    </label>
+      <CategoryFilter
+        categories={categoryOptions}
+        value={categoryFilter}
+        onChange={setCategoryFilter}
+        allLabel={t('trends.allExpenseCategories')}
+        ariaLabel={t('trends.filterCategory')}
+      />
+    </div>
   )
 
   return (
@@ -432,11 +677,15 @@ export function Trends({
           <div>
             <h2>{rangeTitle}</h2>
             <p className="muted" style={{ margin: '0.25rem 0 0' }}>
-              {categoryFilter === 'all'
+              {showAllCategories
                 ? t('trends.hintAll')
-                : t('trends.hintCategory', {
-                    category: selectedCatLabel ?? '',
-                  })}
+                : showSingleTrend
+                  ? t('trends.hintCategory', {
+                      category: selectedCatLabel ?? '',
+                    })
+                  : t('trends.hintCategories', {
+                      categories: selectedCatLabel ?? '',
+                    })}
             </p>
           </div>
           <div className="trends-controls">
@@ -445,88 +694,7 @@ export function Trends({
           </div>
         </div>
 
-        {categoryFilter === 'all' ? (
-          <ResponsiveContainer width="100%" height={380}>
-            <BarChart
-              data={stacked.data}
-              margin={{ top: 28, right: 16, left: 8, bottom: 8 }}
-              style={{ cursor: 'pointer' }}
-              accessibilityLayer={false}
-              onClick={(state) => {
-                const month = monthFromChartClick(state, stacked.data)
-                if (month) onSelectMonth(month)
-              }}
-            >
-              <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
-              <XAxis
-                dataKey="label"
-                tick={{ fontSize: 12, fill: chart.tick }}
-                axisLine={{ stroke: chart.axis }}
-                tickLine={false}
-              />
-              <YAxis
-                tick={{ fontSize: 12, fill: chart.tick }}
-                axisLine={false}
-                tickLine={false}
-                tickFormatter={(v: number) => formatCompactEur(v)}
-              />
-              {chartTooltip}
-              {chartLegend}
-              {stacked.categoryIds.map((id, index) => (
-                <Bar
-                  key={id}
-                  dataKey={id}
-                  name={categoryLabel(id)}
-                  stackId="spend"
-                  fill={getCategoryMap()[id]?.color ?? '#999'}
-                  cursor="pointer"
-                  onClick={(item, barIndex) => {
-                    const month =
-                      (item?.payload as { month?: string } | undefined)
-                        ?.month ?? stacked.data[barIndex]?.month
-                    if (typeof month === 'string') onSelectMonth(month)
-                  }}
-                >
-                  {stacked.data.map((entry) => (
-                    <Cell
-                      key={`${id}-${entry.month}`}
-                      fill={getCategoryMap()[id]?.color ?? '#999'}
-                      fillOpacity={barOpacity(
-                        selectedMonth,
-                        entry.month,
-                        entry.gap,
-                      )}
-                      stroke={entry.gap === 1 ? 'var(--gap-marker, #c9a227)' : undefined}
-                      strokeWidth={entry.gap === 1 ? 1 : 0}
-                      strokeDasharray={entry.gap === 1 ? '3 2' : undefined}
-                    />
-                  ))}
-                  {index === stacked.categoryIds.length - 1 && (
-                    <>
-                      <LabelList
-                        dataKey="total"
-                        position="top"
-                        formatter={(value) => {
-                          const n = Number(value)
-                          return n > 0 ? formatCompactEur(n) : ''
-                        }}
-                        style={{
-                          fontSize: 12,
-                          fontWeight: 600,
-                          fill: chart.label,
-                        }}
-                      />
-                      <LabelList
-                        dataKey="total"
-                        content={makeGapMarkerLabel(stacked.data)}
-                      />
-                    </>
-                  )}
-                </Bar>
-              ))}
-            </BarChart>
-          </ResponsiveContainer>
-        ) : (
+        {showSingleTrend ? (
           <>
             <div className="stats-row">
               <div className="stat">
@@ -550,18 +718,25 @@ export function Trends({
                 <span className="stat-value">{categoryTxs.length}</span>
               </div>
             </div>
+            <div className="trend-plot-row">
+            <div
+              ref={plotRef}
+              className="trend-plot"
+              onDoubleClick={onPlotDoubleClick}
+            >
             <ResponsiveContainer width="100%" height={380}>
               <ComposedChart
                 data={categoryTrend?.data ?? []}
                 margin={{ top: 28, right: 16, left: 8, bottom: 8 }}
                 style={{ cursor: 'pointer' }}
                 accessibilityLayer={false}
+                onMouseLeave={() => setHoveredSlice(null)}
                 onClick={(state) => {
                   const month = monthFromChartClick(
                     state,
                     categoryTrend?.data ?? [],
                   )
-                  if (month) onSelectMonth(month)
+                  if (month) selectMonthSoon(month)
                 }}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
@@ -578,7 +753,6 @@ export function Trends({
                   tickFormatter={(v: number) => formatCompactEur(v)}
                 />
                 {chartTooltip}
-                {chartLegend}
                 <ReferenceLine
                   y={categoryTrend?.average ?? 0}
                   stroke={chart.reference}
@@ -598,12 +772,14 @@ export function Trends({
                   fill={selectedCatColor ?? '#999'}
                   radius={[4, 4, 0, 0]}
                   cursor="pointer"
-                  onClick={(item, barIndex) => {
-                    const month =
-                      (item?.payload as { month?: string } | undefined)
-                        ?.month ?? categoryTrend?.data[barIndex]?.month
-                    if (typeof month === 'string') onSelectMonth(month)
-                  }}
+                  isAnimationActive={false}
+                  {...(selectedIds[0]
+                    ? slicePointerHandlers(selectedIds[0])
+                    : {})}
+                  onClick={onBarActivate(
+                    selectedIds[0] ?? 'uncategorized',
+                    (barIndex) => categoryTrend?.data[barIndex]?.month,
+                  )}
                 >
                   {(categoryTrend?.data ?? []).map((entry) => (
                     <Cell
@@ -623,12 +799,9 @@ export function Trends({
                   ))}
                   <LabelList
                     dataKey="amount"
-                    position="top"
-                    formatter={(value) => {
-                      const n = Number(value)
-                      return n > 0 ? formatCompactEur(n) : ''
-                    }}
-                    style={{ fontSize: 12, fontWeight: 600, fill: chart.label }}
+                    content={(props) =>
+                      barSumLabel(formatCompactEur, chart.label, props)
+                    }
                   />
                   <LabelList
                     dataKey="amount"
@@ -642,10 +815,140 @@ export function Trends({
                   stroke={chart.line}
                   strokeWidth={2}
                   dot={false}
-                  legendType="line"
+                  legendType="none"
+                  isAnimationActive={false}
                 />
               </ComposedChart>
             </ResponsiveContainer>
+            </div>
+            {categoryLegend}
+            </div>
+          </>
+        ) : (
+          <>
+            {!showAllCategories && (
+              <div className="stats-row">
+                <div className="stat">
+                  <span className="stat-label">
+                    {selectedMonth
+                      ? formatMonthLabel(selectedMonth)
+                      : t('trends.selectedMonth')}
+                  </span>
+                  <span className="stat-value expense">
+                    {formatEur(categoryMonthSpend ?? 0)}
+                  </span>
+                </div>
+                <div className="stat">
+                  <span className="stat-label">{t('trends.periodAvg')}</span>
+                  <span className="stat-value">
+                    {formatEur(categoryTrend?.average ?? 0)}
+                  </span>
+                </div>
+                <div className="stat">
+                  <span className="stat-label">{t('trends.txShown')}</span>
+                  <span className="stat-value">{categoryTxs.length}</span>
+                </div>
+              </div>
+            )}
+            <div className="trend-plot-row">
+            <div
+              ref={plotRef}
+              className="trend-plot"
+              onDoubleClick={onPlotDoubleClick}
+            >
+            <ResponsiveContainer width="100%" height={380}>
+              <BarChart
+                data={stacked.data.map((d) => ({
+                  ...d,
+                  [BAR_LABEL_STACK]: 0.01,
+                }))}
+                margin={{ top: 28, right: 16, left: 8, bottom: 8 }}
+                style={{ cursor: 'pointer' }}
+                accessibilityLayer={false}
+                onMouseLeave={() => setHoveredSlice(null)}
+                onClick={(state) => {
+                  const month = monthFromChartClick(state, stacked.data)
+                  if (month) selectMonthSoon(month)
+                }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
+                <XAxis
+                  dataKey="label"
+                  tick={{ fontSize: 12, fill: chart.tick }}
+                  axisLine={{ stroke: chart.axis }}
+                  tickLine={false}
+                />
+                <YAxis
+                  tick={{ fontSize: 12, fill: chart.tick }}
+                  axisLine={false}
+                  tickLine={false}
+                  tickFormatter={(v: number) => formatCompactEur(v)}
+                />
+                {chartTooltip}
+                {stacked.categoryIds.map((id) => (
+                  <Bar
+                    key={id}
+                    dataKey={id}
+                    name={categoryLabel(id)}
+                    stackId="spend"
+                    fill={getCategoryMap()[id]?.color ?? '#999'}
+                    cursor="pointer"
+                    isAnimationActive={false}
+                    {...slicePointerHandlers(id)}
+                    onClick={onBarActivate(
+                      id,
+                      (barIndex) => stacked.data[barIndex]?.month,
+                    )}
+                  >
+                    {stacked.data.map((entry, index) => (
+                      <Cell
+                        key={`${id}-${entry.month}`}
+                        fill={getCategoryMap()[id]?.color ?? '#999'}
+                        fillOpacity={sliceOpacity(
+                          selectedMonth,
+                          entry.month,
+                          entry.gap,
+                          Boolean(
+                            hoveredSlice &&
+                              (hoveredSlice.categoryId !== id ||
+                                hoveredSlice.index !== index),
+                          ),
+                        )}
+                        stroke={
+                          entry.gap === 1
+                            ? 'var(--gap-marker, #c9a227)'
+                            : undefined
+                        }
+                        strokeWidth={entry.gap === 1 ? 1 : 0}
+                        strokeDasharray={entry.gap === 1 ? '3 2' : undefined}
+                      />
+                    ))}
+                  </Bar>
+                ))}
+                <Bar
+                  dataKey={BAR_LABEL_STACK}
+                  stackId="spend"
+                  legendType="none"
+                  tooltipType="none"
+                  fill="transparent"
+                  isAnimationActive={false}
+                >
+                  <LabelList
+                    dataKey="total"
+                    content={(props) =>
+                      barSumLabel(formatCompactEur, chart.label, props)
+                    }
+                  />
+                  <LabelList
+                    dataKey="total"
+                    content={makeGapMarkerLabel(stacked.data)}
+                  />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+            </div>
+            {categoryLegend}
+            </div>
           </>
         )}
 
@@ -734,7 +1037,6 @@ export function Trends({
           onSelectMonth={onSelectMonth}
           summary={summary}
           transactions={transactions}
-          accounts={accounts}
           onUpdateCategory={onUpdateCategory}
         />
       )}
@@ -753,6 +1055,10 @@ export function Trends({
           accounts={accounts}
           onUpdateCategory={onUpdateCategory}
           onDeleteManual={onDeleteManual}
+          onAutoCategorize={onAutoCategorize}
+          onApplySuggestions={onApplySuggestions}
+          llmBusy={llmBusy}
+          llmProgress={llmProgress}
         />
       )}
 

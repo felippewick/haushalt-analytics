@@ -3,20 +3,25 @@ import { useLocale } from '../hooks/useLocale'
 import type { CategoryInput } from '../lib/categories'
 import type { MessageKey } from '../lib/i18n'
 import { translateError } from '../lib/i18n'
-import { emptyStore } from '../lib/store'
+import { withoutSampleDataset } from '../lib/store'
 import {
   downloadStoreJson,
   previewStoreFileMerge,
   type StoreMergePreview,
 } from '../lib/storeMerge'
 import type { AppStore, CategoryId } from '../lib/types'
+import type { AppUpdater } from '../hooks/useAppUpdater'
 import { CategoryManager } from './CategoryManager'
+import { LlmLabPanel, llmLabUnlocked, unlockLlmLab } from './LlmLabPanel'
+import { llmSupported } from '../lib/llmCategorize'
 
 interface Props {
   open: boolean
   store: AppStore
+  updater: AppUpdater
   onClose: () => void
   onApplyMerge: (merged: AppStore) => void
+  onDeleteAll: () => void
   onAddCategory: (input: CategoryInput) => void
   onUpdateCategoryDefinition: (
     categoryId: CategoryId,
@@ -26,7 +31,13 @@ interface Props {
   onResetCategories: () => void
 }
 
-type SettingsPane = 'menu' | 'language' | 'categories' | 'data'
+type SettingsPane =
+  | 'menu'
+  | 'language'
+  | 'categories'
+  | 'updates'
+  | 'data'
+  | 'llmLab'
 
 function SummaryRow({
   label,
@@ -63,11 +74,18 @@ function StoreJsonText({ text }: { text: string }) {
   )
 }
 
+function matchesDeleteConfirm(value: string): boolean {
+  const normalized = value.trim().toLowerCase()
+  return normalized === 'delete' || normalized === 'löschen'
+}
+
 export function SettingsDialog({
   open,
   store,
+  updater,
   onClose,
   onApplyMerge,
+  onDeleteAll,
   onAddCategory,
   onUpdateCategoryDefinition,
   onDeleteCategory,
@@ -78,9 +96,15 @@ export function SettingsDialog({
   const inputRef = useRef<HTMLInputElement>(null)
   const [pane, setPane] = useState<SettingsPane>('menu')
   const [busy, setBusy] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [exportStatus, setExportStatus] = useState<string | null>(null)
   const [preview, setPreview] = useState<StoreMergePreview | null>(null)
   const [fileName, setFileName] = useState<string | null>(null)
+  const [deleteAllOpen, setDeleteAllOpen] = useState(false)
+  const [deleteAllConfirm, setDeleteAllConfirm] = useState('')
+  const [labUnlocked, setLabUnlocked] = useState(llmLabUnlocked)
+  const [labClicks, setLabClicks] = useState(0)
 
   useEffect(() => {
     const el = dialogRef.current
@@ -99,6 +123,8 @@ export function SettingsDialog({
       setError(null)
       setPreview(null)
       setFileName(null)
+      setDeleteAllOpen(false)
+      setDeleteAllConfirm('')
       if (inputRef.current) inputRef.current.value = ''
     }
   }, [open])
@@ -107,16 +133,29 @@ export function SettingsDialog({
     setPreview(null)
     setFileName(null)
     setError(null)
+    setExportStatus(null)
     if (inputRef.current) inputRef.current.value = ''
   }
 
   const goBack = () => {
     resetPreview()
+    setDeleteAllOpen(false)
+    setDeleteAllConfirm('')
     setPane('menu')
   }
 
-  const onExport = () => {
-    downloadStoreJson(store)
+  const onExport = async () => {
+    setError(null)
+    setExportStatus(null)
+    setExporting(true)
+    try {
+      const result = await downloadStoreJson(store)
+      if (result === 'saved') setExportStatus(t('settings.exportDone'))
+    } catch (e) {
+      setError(translateError(t, e, 'error.exportFailed'))
+    } finally {
+      setExporting(false)
+    }
   }
 
   const onPickFile = async (file: File | undefined) => {
@@ -132,7 +171,7 @@ export function SettingsDialog({
     setPreview(null)
     setFileName(file.name)
     try {
-      const base = store.isDemo ? emptyStore() : store
+      const base = withoutSampleDataset(store)
       const result = await previewStoreFileMerge(base, file)
       setPreview(result)
     } catch (e) {
@@ -150,15 +189,35 @@ export function SettingsDialog({
     onClose()
   }
 
+  const onConfirmDeleteAll = () => {
+    if (!matchesDeleteConfirm(deleteAllConfirm)) return
+    onDeleteAll()
+    onClose()
+  }
+
+  const onLabSecretClick = () => {
+    if (!llmSupported() || labUnlocked) return
+    const next = labClicks + 1
+    setLabClicks(next)
+    if (next >= 5) {
+      unlockLlmLab()
+      setLabUnlocked(true)
+    }
+  }
+
   const s = preview?.summary
   const title =
     pane === 'language'
       ? t('settings.language.title')
       : pane === 'categories'
         ? t('settings.categories.title')
-        : pane === 'data'
-          ? t('settings.data.title')
-          : t('settings.title')
+        : pane === 'updates'
+          ? t('settings.updates.title')
+          : pane === 'data'
+            ? t('settings.data.title')
+            : pane === 'llmLab'
+              ? t('llmLab.title')
+              : t('settings.title')
 
   const languageValue =
     preference === 'system'
@@ -172,7 +231,7 @@ export function SettingsDialog({
   return (
     <dialog
       ref={dialogRef}
-      className="settings-dialog"
+      className={`settings-dialog${pane === 'llmLab' ? ' settings-dialog--lab' : ''}`}
       onClose={onClose}
     >
       <div className="settings-dialog-inner">
@@ -187,7 +246,7 @@ export function SettingsDialog({
                 ← {t('settings.back')}
               </button>
             )}
-            <h2>{title}</h2>
+            <h2 onClick={onLabSecretClick}>{title}</h2>
           </div>
           <button type="button" className="linkish" onClick={onClose}>
             {t('settings.close')}
@@ -242,6 +301,32 @@ export function SettingsDialog({
                   </span>
                 </span>
               </button>
+              {updater.enabled && (
+                <button
+                  type="button"
+                  className="settings-menu-item"
+                  onClick={() => setPane('updates')}
+                >
+                  <span className="settings-menu-text">
+                    <span className="settings-menu-title">
+                      {t('settings.menu.updates')}
+                    </span>
+                    <span className="muted small settings-menu-desc">
+                      {t('settings.menu.updatesDesc')}
+                    </span>
+                  </span>
+                  <span className="settings-menu-meta">
+                    <span className="settings-menu-value">
+                      {updater.status === 'available' && updater.availableVersion
+                        ? t('settings.menu.updatesAvailable')
+                        : updater.currentVersion || '—'}
+                    </span>
+                    <span className="settings-menu-chevron" aria-hidden="true">
+                      ›
+                    </span>
+                  </span>
+                </button>
+              )}
               <button
                 type="button"
                 className="settings-menu-item"
@@ -259,6 +344,25 @@ export function SettingsDialog({
                   ›
                 </span>
               </button>
+              {labUnlocked && (
+                <button
+                  type="button"
+                  className="settings-menu-item"
+                  onClick={() => setPane('llmLab')}
+                >
+                  <span className="settings-menu-text">
+                    <span className="settings-menu-title">
+                      {t('llmLab.title')}
+                    </span>
+                    <span className="muted small settings-menu-desc">
+                      {t('llmLab.menuDesc')}
+                    </span>
+                  </span>
+                  <span className="settings-menu-chevron" aria-hidden="true">
+                    ›
+                  </span>
+                </button>
+              )}
             </nav>
           </div>
         )}
@@ -297,6 +401,12 @@ export function SettingsDialog({
           </div>
         )}
 
+        {pane === 'llmLab' && (
+          <div className="settings-pane">
+            <LlmLabPanel store={store} />
+          </div>
+        )}
+
         {pane === 'categories' && (
           <div className="settings-pane">
             <CategoryManager
@@ -309,6 +419,99 @@ export function SettingsDialog({
           </div>
         )}
 
+        {pane === 'updates' && (
+          <div className="settings-pane">
+            <p className="muted settings-intro">
+              {t('settings.updates.detail')}
+            </p>
+            <p className="settings-updates-version">
+              {t('settings.updates.current')}
+              {': '}
+              <strong
+                onClick={onLabSecretClick}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') onLabSecretClick()
+                }}
+              >
+                {updater.currentVersion || '—'}
+              </strong>
+            </p>
+            {updater.status === 'checking' && (
+              <p className="muted">{t('settings.updates.checking')}</p>
+            )}
+            {updater.status === 'upToDate' && (
+              <p>{t('settings.updates.upToDate')}</p>
+            )}
+            {updater.status === 'available' && updater.availableVersion && (
+              <p>
+                {t('settings.updates.available', {
+                  version: updater.availableVersion,
+                })}
+              </p>
+            )}
+            {updater.status === 'downloading' && (
+              <p>
+                {updater.progressPercent != null
+                  ? t('settings.updates.downloading', {
+                      percent: updater.progressPercent,
+                    })
+                  : t('settings.updates.downloadingUnknown')}
+              </p>
+            )}
+            {updater.status === 'restarting' && (
+              <p>{t('settings.updates.restarting')}</p>
+            )}
+            {updater.status === 'dev' && (
+              <p className="muted">{t('settings.updates.dev')}</p>
+            )}
+            {updater.status === 'error' && (
+              <p className="error">
+                {t('settings.updates.error')}
+                {updater.error ? ` ${updater.error}` : ''}
+              </p>
+            )}
+            {updater.status === 'downloading' && (
+              <div
+                className="settings-update-progress"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={updater.progressPercent ?? undefined}
+              >
+                <div
+                  className="settings-update-progress-bar"
+                  style={{
+                    width: `${updater.progressPercent ?? 15}%`,
+                  }}
+                />
+              </div>
+            )}
+            <section className="settings-actions">
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={
+                  updater.status === 'checking' ||
+                  updater.status === 'downloading' ||
+                  updater.status === 'restarting'
+                }
+                onClick={() => void updater.checkForUpdate()}
+              >
+                {t('settings.updates.check')}
+              </button>
+              {updater.status === 'available' && (
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => void updater.installAndRelaunch()}
+                >
+                  {t('settings.updates.install')}
+                </button>
+              )}
+            </section>
+          </div>
+        )}
+
         {pane === 'data' && (
           <div className="settings-pane">
             <p className="muted settings-intro">
@@ -317,13 +520,18 @@ export function SettingsDialog({
             <p className="privacy-note">{t('settings.privacy')}</p>
 
             <section className="settings-actions">
-              <button type="button" className="btn-primary" onClick={onExport}>
-                {t('settings.export')}
+              <button
+                type="button"
+                className="btn-primary"
+                disabled={busy || exporting}
+                onClick={() => void onExport()}
+              >
+                {exporting ? t('settings.exporting') : t('settings.export')}
               </button>
               <button
                 type="button"
                 className="btn-secondary"
-                disabled={busy}
+                disabled={busy || exporting}
                 onClick={() => inputRef.current?.click()}
               >
                 {busy ? t('settings.reading') : t('settings.import')}
@@ -337,6 +545,7 @@ export function SettingsDialog({
               />
             </section>
 
+            {exportStatus && <p className="muted">{exportStatus}</p>}
             {error && <p className="error">{error}</p>}
 
             {preview && (
@@ -527,6 +736,60 @@ export function SettingsDialog({
                 </div>
               </section>
             )}
+
+            <section className="settings-danger">
+              <h3>{t('settings.deleteAll')}</h3>
+              <p className="muted settings-intro">{t('settings.deleteAllIntro')}</p>
+              {deleteAllOpen ? (
+                <form
+                  className="import-delete-confirm"
+                  onSubmit={(e) => {
+                    e.preventDefault()
+                    onConfirmDeleteAll()
+                  }}
+                >
+                  <p>{t('settings.deleteAllHint')}</p>
+                  <input
+                    type="text"
+                    className="settings-confirm-input"
+                    value={deleteAllConfirm}
+                    onChange={(e) => setDeleteAllConfirm(e.target.value)}
+                    placeholder={t('settings.deleteAllPlaceholder')}
+                    autoComplete="off"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    aria-label={t('settings.deleteAllHint')}
+                  />
+                  <div className="import-delete-confirm-actions">
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => {
+                        setDeleteAllOpen(false)
+                        setDeleteAllConfirm('')
+                      }}
+                    >
+                      {t('settings.cancel')}
+                    </button>
+                    <button
+                      type="submit"
+                      className="btn-danger"
+                      disabled={!matchesDeleteConfirm(deleteAllConfirm)}
+                    >
+                      {t('settings.deleteAllConfirm')}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setDeleteAllOpen(true)}
+                >
+                  {t('settings.deleteAll')}
+                </button>
+              )}
+            </section>
           </div>
         )}
       </div>

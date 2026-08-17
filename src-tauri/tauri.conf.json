@@ -29,6 +29,8 @@
   "bundle": {
     "active": true,
     "targets": ["dmg", "app", "msi", "nsis"],
+    "category": "Finance",
+    "shortDescription": "Offline household expense analytics",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -43,6 +45,17 @@
     "windows": {
       "nsis": {
         "installMode": "currentUser"
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEM1ODdEM0MwNkIyQzJBNTkKUldSWktpeHJ3Tk9IeFRVMDhlNkVSa1JoWStuNjJTUkd2dGJCQWlMZVRWMFNrNG5JSzZta09PZnQK",
+      "endpoints": [
+        "https://github.com/felippewick/haushalt-analytics/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
       }
     }
   }

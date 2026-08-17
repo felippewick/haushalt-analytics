@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import {
   PieChart,
   Pie,
@@ -7,17 +7,15 @@ import {
   Tooltip,
   Legend,
 } from 'recharts'
-import type { Account, CategoryId, Transaction } from '../lib/types'
+import type { CategoryId, Transaction } from '../lib/types'
 import type { MonthSummary } from '../lib/analytics'
 import {
   filterByMonth,
-  filterTransactions,
   pickTopExpenses,
   pickTopIncome,
-  type FlowFilter,
 } from '../lib/analytics'
-import { transactionFlow } from '../lib/categorize'
 import { CategorySelect } from './CategorySelect'
+import { MonthNav } from './MonthNav'
 import { useLocale } from '../hooks/useLocale'
 import { CHART_THEMES, useTheme } from '../hooks/useTheme'
 
@@ -29,7 +27,6 @@ interface Props {
   onSelectMonth: (month: string) => void
   summary: MonthSummary | null
   transactions: Transaction[]
-  accounts: Account[]
   onUpdateCategory: (
     transactionId: string,
     categoryId: CategoryId,
@@ -43,16 +40,9 @@ export function Dashboard({
   onSelectMonth,
   summary,
   transactions,
-  accounts,
   onUpdateCategory,
 }: Props) {
-  const {
-    t,
-    categories,
-    categoryLabel,
-    formatMonthLabel,
-    formatEur,
-  } = useLocale()
+  const { t, categoryLabel, formatEur } = useLocale()
   const { resolved } = useTheme()
   const chart = CHART_THEMES[resolved]
   const pieTooltipStyle = {
@@ -62,57 +52,27 @@ export function Dashboard({
     fontSize: 12,
     color: chart.tooltipText,
   }
-  const [query, setQuery] = useState('')
-  const [categoryFilter, setCategoryFilter] = useState<CategoryId | 'all'>('all')
-  const [flowFilter, setFlowFilter] = useState<FlowFilter>('all')
-
+  const pieLegendProps = {
+    layout: 'vertical' as const,
+    align: 'right' as const,
+    verticalAlign: 'middle' as const,
+    iconType: 'circle' as const,
+    iconSize: 8,
+    wrapperStyle: {
+      fontSize: 12,
+      color: chart.legend,
+      lineHeight: '20px',
+      maxHeight: 220,
+      overflow: 'auto',
+    },
+  }
   const monthTx = useMemo(
     () => (selectedMonth ? filterByMonth(transactions, selectedMonth) : []),
     [transactions, selectedMonth],
   )
 
-  const filtered = useMemo(
-    () =>
-      filterTransactions(monthTx, {
-        query,
-        categoryId: categoryFilter,
-        flow: flowFilter,
-        accounts,
-      }),
-    [monthTx, query, categoryFilter, flowFilter, accounts],
-  )
-
-  const topExpenses = useMemo(() => pickTopExpenses(filtered), [filtered])
-  const topIncome = useMemo(() => pickTopIncome(filtered), [filtered])
-
-  const flowCounts = useMemo(() => {
-    let expense = 0
-    let income = 0
-    let transfer = 0
-    for (const tx of monthTx) {
-      const f = transactionFlow(tx)
-      if (f === 'expense') expense++
-      else if (f === 'income') income++
-      else transfer++
-    }
-    return { expense, income, transfer }
-  }, [monthTx])
-
-  const filtersActive =
-    query.trim() !== '' || categoryFilter !== 'all' || flowFilter !== 'all'
-
-  const expenseCats = categories.filter(
-    (c) =>
-      !c.isIncome &&
-      !c.excludeFromTotals &&
-      c.id !== 'uncategorized' &&
-      c.id !== 'other',
-  )
-  const incomeCats = categories.filter((c) => c.isIncome)
-  const excludedCats = categories.filter((c) => c.excludeFromTotals)
-  const otherCats = categories.filter(
-    (c) => c.id === 'uncategorized' || c.id === 'other',
-  )
+  const topExpenses = useMemo(() => pickTopExpenses(monthTx), [monthTx])
+  const topIncome = useMemo(() => pickTopIncome(monthTx), [monthTx])
 
   if (!months.length) {
     return (
@@ -143,19 +103,13 @@ export function Dashboard({
 
   return (
     <section className="card">
-      <div className="card-header">
+      <div className="card-header card-header--month">
         <h2>{t('dashboard.title')}</h2>
-        <select
-          value={selectedMonth}
-          onChange={(e) => onSelectMonth(e.target.value)}
-          aria-label={t('trends.selectMonth')}
-        >
-          {months.map((m) => (
-            <option key={m} value={m}>
-              {formatMonthLabel(m)}
-            </option>
-          ))}
-        </select>
+        <MonthNav
+          months={months}
+          selectedMonth={selectedMonth}
+          onSelectMonth={onSelectMonth}
+        />
       </div>
 
       {summary && (
@@ -211,72 +165,6 @@ export function Dashboard({
             </button>
           </div>
 
-          <div className="flow-tabs">
-            {(
-              [
-                ['all', t('flow.all', { count: monthTx.length })],
-                ['expense', t('flow.expenses', { count: flowCounts.expense })],
-                ['income', t('flow.incomes', { count: flowCounts.income })],
-                ['transfer', t('flow.excluded', { count: flowCounts.transfer })],
-              ] as const
-            ).map(([tabId, label]) => (
-              <button
-                key={tabId}
-                type="button"
-                className={`flow-tab ${flowFilter === tabId ? 'active' : ''} ${tabId !== 'all' ? tabId : ''}`}
-                onClick={() => setFlowFilter(tabId)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          <div className="toolbar">
-            <input
-              type="search"
-              placeholder={t('tx.search')}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              className="search"
-            />
-            <select
-              value={categoryFilter}
-              onChange={(e) =>
-                setCategoryFilter(e.target.value as CategoryId | 'all')
-              }
-            >
-              <option value="all">{t('tx.allCategories')}</option>
-              <optgroup label={t('catGroup.expenses')}>
-                {expenseCats.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.label}
-                  </option>
-                ))}
-              </optgroup>
-              <optgroup label={t('catGroup.income')}>
-                {incomeCats.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.label}
-                  </option>
-                ))}
-              </optgroup>
-              <optgroup label={t('catGroup.excluded')}>
-                {excludedCats.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.label}
-                  </option>
-                ))}
-              </optgroup>
-              <optgroup label={t('catGroup.other')}>
-                {otherCats.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.label}
-                  </option>
-                ))}
-              </optgroup>
-            </select>
-          </div>
-
           <div className="dashboard-grid">
             <div className="chart-wrap">
               <h3>
@@ -292,7 +180,7 @@ export function Dashboard({
                       data={expenseChart}
                       dataKey="value"
                       nameKey="name"
-                      cx="50%"
+                      cx="38%"
                       cy="50%"
                       innerRadius={50}
                       outerRadius={90}
@@ -316,9 +204,7 @@ export function Dashboard({
                       contentStyle={pieTooltipStyle}
                       itemStyle={{ color: chart.tooltipText }}
                     />
-                    <Legend
-                      wrapperStyle={{ fontSize: 12, color: chart.legend }}
-                    />
+                    <Legend {...pieLegendProps} />
                   </PieChart>
                 </ResponsiveContainer>
               )}
@@ -338,7 +224,7 @@ export function Dashboard({
                       data={incomeChart}
                       dataKey="value"
                       nameKey="name"
-                      cx="50%"
+                      cx="38%"
                       cy="50%"
                       innerRadius={50}
                       outerRadius={90}
@@ -362,9 +248,7 @@ export function Dashboard({
                       contentStyle={pieTooltipStyle}
                       itemStyle={{ color: chart.tooltipText }}
                     />
-                    <Legend
-                      wrapperStyle={{ fontSize: 12, color: chart.legend }}
-                    />
+                    <Legend {...pieLegendProps} />
                   </PieChart>
                 </ResponsiveContainer>
               )}
@@ -373,15 +257,7 @@ export function Dashboard({
 
           <div className="dashboard-grid" style={{ marginTop: '1rem' }}>
             <div>
-              <h3>
-                {t('dashboard.biggestExpenses')}
-                {filtersActive && (
-                  <span className="muted small">
-                    {' '}
-                    {t('dashboard.filtered')}
-                  </span>
-                )}
-              </h3>
+              <h3>{t('dashboard.biggestExpenses')}</h3>
               <ul className="top-list">
                 {topExpenses.map((tx) => (
                   <TopListItem
@@ -394,24 +270,12 @@ export function Dashboard({
                   />
                 ))}
                 {topExpenses.length === 0 && (
-                  <li className="muted">
-                    {filtersActive
-                      ? t('dashboard.noExpensesFiltered')
-                      : t('dashboard.noExpensesShort')}
-                  </li>
+                  <li className="muted">{t('dashboard.noExpensesShort')}</li>
                 )}
               </ul>
             </div>
             <div>
-              <h3>
-                {t('dashboard.topIncome')}
-                {filtersActive && (
-                  <span className="muted small">
-                    {' '}
-                    {t('dashboard.filtered')}
-                  </span>
-                )}
-              </h3>
+              <h3>{t('dashboard.topIncome')}</h3>
               <ul className="top-list">
                 {topIncome.map((tx) => (
                   <TopListItem
@@ -424,11 +288,7 @@ export function Dashboard({
                   />
                 ))}
                 {topIncome.length === 0 && (
-                  <li className="muted">
-                    {filtersActive
-                      ? t('dashboard.noIncomeFiltered')
-                      : t('dashboard.noIncomeShort')}
-                  </li>
+                  <li className="muted">{t('dashboard.noIncomeShort')}</li>
                 )}
               </ul>
             </div>
@@ -466,6 +326,7 @@ function TopListItem({
         <CategorySelect
           value={tx.categoryId}
           counterparty={tx.counterparty}
+          amount={tx.amount}
           ariaLabel={t('tx.categoryAria', {
             name: tx.counterparty || t('tx.transaction'),
           })}

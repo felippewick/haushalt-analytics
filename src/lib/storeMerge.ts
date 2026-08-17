@@ -1,4 +1,5 @@
-import { transactionContentKey } from './dkbParser'
+import { bookingIdentityKey, transactionContentKey } from './dkbParser'
+import { omitDemoData } from './seedData'
 import { categorizeAll } from './categorize'
 import {
   extractTradeRepublicNativeId,
@@ -88,14 +89,15 @@ function emptySummary(): StoreMergeSummary {
 
 /** Persistable store shape (user rules only), matching saveStore. */
 export function serializeStoreForFile(store: AppStore): AppStore {
+  const clean = omitDemoData(store)
   return {
     version: 2,
-    accounts: store.accounts,
-    transactions: store.transactions,
-    rules: store.rules.filter((r) => r.source === 'user'),
-    imports: store.imports ?? [],
-    lastImportedAt: store.lastImportedAt,
-    categories: store.categories ?? cloneDefaultCategories(),
+    accounts: clean.accounts,
+    transactions: clean.transactions,
+    rules: clean.rules.filter((r) => r.source === 'user'),
+    imports: clean.imports ?? [],
+    lastImportedAt: clean.lastImportedAt,
+    categories: clean.categories ?? cloneDefaultCategories(),
   }
 }
 
@@ -103,16 +105,41 @@ export function storeToDownloadJson(store: AppStore): string {
   return JSON.stringify(serializeStoreForFile(store), null, 2)
 }
 
-export function downloadStoreJson(store: AppStore, filename?: string): void {
+export type StoreExportResult = 'saved' | 'cancelled'
+
+/**
+ * Save store.json via a native Save dialog in Tauri (browser `<a download>`
+ * is a no-op in the WebView). Falls back to a blob download in the browser.
+ */
+export async function downloadStoreJson(
+  store: AppStore,
+  filename?: string,
+): Promise<StoreExportResult> {
   const json = storeToDownloadJson(store)
+  const date = new Date().toISOString().slice(0, 10)
+  const name = filename ?? `store-${date}.json`
+
+  const { isTauri } = await import('@tauri-apps/api/core')
+  if (isTauri()) {
+    const { save } = await import('@tauri-apps/plugin-dialog')
+    const { writeTextFile } = await import('@tauri-apps/plugin-fs')
+    const path = await save({
+      defaultPath: name,
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    })
+    if (!path) return 'cancelled'
+    await writeTextFile(path, json)
+    return 'saved'
+  }
+
   const blob = new Blob([json], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
-  const date = new Date().toISOString().slice(0, 10)
   a.href = url
-  a.download = filename ?? `store-${date}.json`
+  a.download = name
   a.click()
   URL.revokeObjectURL(url)
+  return 'saved'
 }
 
 function isLikelyAppStore(value: unknown): value is Partial<AppStore> {
@@ -260,6 +287,7 @@ function mergeTransactions(
   const byId = new Map(local.map((t) => [t.id, { ...t }]))
   const contentToId = new Map<string, string>()
   const nativeToId = new Map<string, string>()
+  const bookingToId = new Map<string, string>()
 
   for (const t of byId.values()) {
     contentToId.set(
@@ -273,6 +301,8 @@ function mergeTransactions(
     )
     const native = extractTradeRepublicNativeId(t.id, t.accountId)
     if (native) nativeToId.set(native, t.id)
+    const booking = t.origin === 'manual' ? null : bookingIdentityKey(t)
+    if (booking) bookingToId.set(booking, t.id)
   }
 
   for (const raw of incoming) {
@@ -299,10 +329,12 @@ function mergeTransactions(
     })
     const native = extractTradeRepublicNativeId(inc.id, inc.accountId)
 
+    const booking = inc.origin === 'manual' ? null : bookingIdentityKey(inc)
     const matchId =
       (byId.has(inc.id) ? inc.id : undefined) ??
       contentToId.get(content) ??
-      (native ? nativeToId.get(native) : undefined)
+      (native ? nativeToId.get(native) : undefined) ??
+      (booking ? bookingToId.get(booking) : undefined)
 
     if (matchId) {
       const localTx = byId.get(matchId)
@@ -340,6 +372,13 @@ function mergeTransactions(
         }
       }
 
+      if (
+        localTx.counterparty !== inc.counterparty &&
+        inc.importedAt >= localTx.importedAt
+      ) {
+        updated = { ...updated, counterparty: inc.counterparty }
+        changed = true
+      }
       if (!updated.importId && inc.importId) {
         updated = { ...updated, importId: inc.importId }
         changed = true
@@ -361,6 +400,7 @@ function mergeTransactions(
     byId.set(inc.id, inc)
     contentToId.set(content, inc.id)
     if (native) nativeToId.set(native, inc.id)
+    if (booking) bookingToId.set(booking, inc.id)
     summary.transactionsAdded++
   }
 
@@ -518,6 +558,9 @@ export function previewStoreMerge(
   const categoryUpdates: CategoryUpdateSample[] = []
   const accountNameDiffs: AccountNameDiffSample[] = []
   const warnings: string[] = []
+
+  local = omitDemoData(local)
+  incoming = omitDemoData(incoming)
 
   const incomingEmpty =
     incoming.accounts.length === 0 &&

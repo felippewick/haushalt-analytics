@@ -31,14 +31,6 @@ export const CATEGORIES: Category[] = [
   },
   { id: 'atm', label: 'ATM / Cash', color: '#78716c' },
   { id: 'salary', label: 'Salary', color: '#10b981', isIncome: true },
-  { id: 'refunds', label: 'Refunds', color: '#2dd4bf', isIncome: true },
-  { id: 'sales', label: 'Sales', color: '#16a34a', isIncome: true },
-  {
-    id: 'transfer',
-    label: 'Transfer',
-    color: '#94a3b8',
-    excludeFromTotals: true,
-  },
   {
     id: 'excluded',
     label: 'Excluded',
@@ -79,12 +71,12 @@ export const DEFAULT_RULES: CategoryRule[] = [
   rule('sec12', 'securities', ' · sell · ', false),
   rule('sec13', 'securities', '· trading', false),
 
-  // Transfers (own accounts, savings) — high priority
-  rule('t1', 'transfer', 'sparkonto', false),
-  rule('t2', 'transfer', 'tagesgeld', false),
-  rule('t3', 'transfer', 'eigenüberweisung', false),
-  rule('t4', 'transfer', 'umbuchung', false),
-  rule('t5', 'transfer', 'depot', false),
+  // Own-account / savings movements — exclude from household totals
+  rule('t1', 'excluded', 'sparkonto', false),
+  rule('t2', 'excluded', 'tagesgeld', false),
+  rule('t3', 'excluded', 'eigenüberweisung', false),
+  rule('t4', 'excluded', 'umbuchung', false),
+  rule('t5', 'excluded', 'depot', false),
 
   // Salary (avoid bare "abrechnung" — matches Kreditkartenabrechnung etc.)
   rule('s1', 'salary', 'gehalt', false),

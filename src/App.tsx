@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { format } from 'date-fns'
 import { GearSix, Monitor, Moon, Sun } from '@phosphor-icons/react'
 import { useAppStore } from './hooks/useAppStore'
+import { useAppUpdater } from './hooks/useAppUpdater'
 import { useLocale, useSyncCategories } from './hooks/useLocale'
 import { useTheme } from './hooks/useTheme'
 import { ImportDropzone } from './components/ImportDropzone'
@@ -33,6 +34,7 @@ export default function App() {
     error,
     lastImport,
     llmBusy,
+    llmProgress,
     importFile,
     importGenericFile,
     updateCategory,
@@ -40,19 +42,37 @@ export default function App() {
     removeTransaction,
     removeImport,
     renameAccount,
+    deleteAccount,
     reassignImport,
     addAccount,
     applyImportedStore,
+    resetAllData,
     addCategory,
     updateCategoryDefinition,
     deleteCategory,
     resetCategories,
+    categorizeUncategorized,
+    applyCategorizeSuggestions,
   } = useAppStore()
   const { t } = useLocale()
+  const updater = useAppUpdater()
   const { preference, cycleTheme } = useTheme()
   useSyncCategories(store.categories)
 
   const [accountFilter, setAccountFilter] = useState<string[] | 'all'>('all')
+
+  useEffect(() => {
+    if (accountFilter === 'all') return
+    const ids = new Set(store.accounts.map((a) => a.id))
+    const next = accountFilter.filter((id) => ids.has(id))
+    if (next.length === accountFilter.length) return
+    setAccountFilter(
+      next.length === 0 || next.length >= store.accounts.length
+        ? 'all'
+        : next,
+    )
+  }, [store.accounts, accountFilter])
+
   const [selectedMonth, setSelectedMonth] = useState<string>('')
   const [periodRange, setPeriodRange] = useState<MonthRange | null>(null)
   const [tab, setTab] = useState<Tab>('trends')
@@ -94,7 +114,7 @@ export default function App() {
   const activeMonth =
     selectedMonth ||
     activeRange?.to ||
-    months[0] ||
+    months[months.length - 1] ||
     format(new Date(), 'yyyy-MM')
 
   if (loading) {
@@ -200,14 +220,62 @@ export default function App() {
       {mergeNotice && (
         <div className="banner success-banner">{mergeNotice}</div>
       )}
+      {updater.showBanner && updater.availableVersion && (
+        <div className="banner update-banner" role="status">
+          <div>
+            <strong>{t('app.update.title')}</strong>
+            <p>
+              {updater.status === 'downloading'
+                ? updater.progressPercent != null
+                  ? t('settings.updates.downloading', {
+                      percent: updater.progressPercent,
+                    })
+                  : t('settings.updates.downloadingUnknown')
+                : updater.status === 'restarting'
+                  ? t('settings.updates.restarting')
+                  : t('app.update.body', {
+                      version: updater.availableVersion,
+                    })}
+            </p>
+          </div>
+          <div className="update-banner-actions">
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={
+                updater.status === 'downloading' ||
+                updater.status === 'restarting'
+              }
+              onClick={() => void updater.installAndRelaunch()}
+            >
+              {t('app.update.install')}
+            </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              disabled={updater.status === 'downloading'}
+              onClick={updater.dismissBanner}
+            >
+              {t('app.update.later')}
+            </button>
+          </div>
+        </div>
+      )}
 
       <SettingsDialog
         open={settingsOpen}
         store={store}
+        updater={updater}
         onClose={() => setSettingsOpen(false)}
         onApplyMerge={(merged) => {
           applyImportedStore(merged)
           setMergeNotice(t('app.mergeApplied'))
+          window.setTimeout(() => setMergeNotice(null), 4000)
+        }}
+        onDeleteAll={() => {
+          resetAllData()
+          setAccountFilter('all')
+          setMergeNotice(t('app.dataDeleted'))
           window.setTimeout(() => setMergeNotice(null), 4000)
         }}
         onAddCategory={addCategory}
@@ -229,6 +297,10 @@ export default function App() {
           onAddManual={addManual}
           onDeleteManual={removeTransaction}
           onUpdateCategory={updateCategory}
+          onAutoCategorize={categorizeUncategorized}
+          onApplySuggestions={applyCategorizeSuggestions}
+          llmBusy={llmBusy}
+          llmProgress={llmProgress}
         />
       )}
       {tab === 'transactions' && (
@@ -237,6 +309,10 @@ export default function App() {
           accounts={store.accounts}
           onUpdateCategory={updateCategory}
           onDeleteManual={removeTransaction}
+          onAutoCategorize={categorizeUncategorized}
+          onApplySuggestions={applyCategorizeSuggestions}
+          llmBusy={llmBusy}
+          llmProgress={llmProgress}
         />
       )}
       {tab === 'import' && (
@@ -249,10 +325,12 @@ export default function App() {
           onImportGeneric={importGenericFile}
           onDeleteImport={removeImport}
           onRenameAccount={renameAccount}
+          onDeleteAccount={deleteAccount}
           onReassignImport={reassignImport}
           onAddAccount={addAccount}
           onUpdateCategory={updateCategory}
           llmBusy={llmBusy}
+          llmProgress={llmProgress}
           lastImport={lastImport}
         />
       )}

@@ -11,6 +11,8 @@ Local app to visualize and categorize expenses from **DKB Girokonto** and **Trad
 2. Install and open **uebrig**.
 3. Go to **Import** and drop a bank CSV.
 
+After the first install, later versions can be applied from **Settings → Updates** (no need to re-download the installer). GitHub Release assets must be publicly downloadable for that to work.
+
 Your data is saved automatically on this machine. Nothing is uploaded.
 
 > **Unsigned builds:** Until the app is code-signed, macOS Gatekeeper or Windows SmartScreen may warn on first open. On Mac: right-click the app → **Open**. On Windows: choose **More info** → **Run anyway**.
@@ -33,7 +35,7 @@ The app expects the current (post-2023) format: semicolon-separated, German date
 
 - **Import** with automatic dedupe (safe to re-export overlapping periods)
 - **Auto-categorization** via keyword rules (REWE → Groceries, BVG → Transport, etc.)
-- **On-device AI** (desktop app): after rules, categorizes remaining rows locally — prefers **Apple Foundation Models** (Apple Intelligence on macOS 26+) and falls back to a bundled ~380 MB model. No cloud, no extra install.
+- **On-device AI** (desktop app): after rules, categorizes remaining rows locally — prefers **Apple Foundation Models** (Apple Intelligence on macOS 26+) and falls back to a bundled ~940 MB Qwen 1.5B model. No cloud, no extra install.
 - **Manual overrides** in the transactions table; check **always** to remember a merchant
 - **Overview**: stacked expense chart for a selectable month range (defaults to the last 12 months when enough history exists); click a month for income/expenses, category donut, and biggest expenses. Months missing data for an account are marked on the chart.
 - **Accounts**: import CSVs into named accounts (DKB, Trade Republic, …); aggregate all by default or filter in the header
@@ -71,7 +73,7 @@ Open the URL Vite prints (usually http://localhost:5173). Persistence uses the V
 
 ```bash
 npm install
-npm run model:download   # once — fetches the ~380 MB GGUF into src-tauri/resources/models/
+npm run model:download   # once — fetches the ~940 MB GGUF into src-tauri/resources/models/
 npm run tauri:dev        # Vite + native window (also downloads the model if missing)
 npm run tauri:build      # production installers (bundles the model into .dmg / .msi)
 ```
@@ -112,11 +114,23 @@ git push origin v0.1.0
 ```
 
 3. Wait for the **Release** workflow on the Actions tab (macOS arm, macOS Intel, Windows).
-4. Open the draft release → review assets → **Publish release**.
+4. Open the draft release → review assets → **Publish release**. Installed apps only see updates after the draft is published.
 
 You can also run **Actions → Release → Run workflow** without a tag; it creates `v__VERSION__` from `tauri.conf.json`.
 
 If the workflow fails with “Resource not accessible by integration”, set **Settings → Actions → General → Workflow permissions** to **Read and write permissions**.
+
+#### In-app updates
+
+After users install a build that includes the updater, they do **not** need to download a new `.dmg` / `.msi` by hand. The app checks GitHub Releases on launch and from **Settings → Updates**, then downloads the new bundle and restarts.
+
+Requirements:
+
+1. Repo secret **`TAURI_SIGNING_PRIVATE_KEY`** (already set for this repo). Keep a backup of `~/.tauri/uebrig.key` — if the private key is lost, existing installs cannot verify later updates.
+2. **Publish** the GitHub Release (drafts are invisible to the updater).
+3. **Public release assets.** GitHub returns 404 for unauthenticated downloads from a **private** repository. Make this repo public, or host `latest.json` plus the updater archives (`.app.tar.gz` / NSIS `.exe`) on a public URL and point `plugins.updater.endpoints` at that JSON.
+
+The first time you ship the updater, users still install once from Releases. After that, later tags can be applied in-app. Each update currently includes the bundled ~940 MB model.
 
 #### Code signing (before wider distribution)
 
@@ -145,7 +159,7 @@ Add signing secrets and Tauri signing config when you are ready to ship publicly
 ## Scripts
 
 ```bash
-npm run model:download # fetch bundled GGUF (~380 MB) for desktop builds
+npm run model:download # fetch bundled GGUF (~940 MB) for desktop builds
 npm run dev          # browser + JSON persistence
 npm run typecheck    # TypeScript only (same gate as pre-commit / CI build)
 npm run lint         # oxlint

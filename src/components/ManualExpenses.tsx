@@ -135,6 +135,7 @@ export function ManualExpenses({ month, onAdd }: Props) {
               <span>{t('manual.category')}</span>
               <CategorySelect
                 value={categoryId}
+                amount={-1}
                 onChange={(id) => setCategoryId(id)}
               />
             </label>

@@ -4,9 +4,9 @@ import { cloneDefaultCategories, syncCategoryRegistry } from './categories'
 import { categorizeAll } from './categorize'
 import { transactionHash } from './dkbParser'
 
-const DEMO_ACCOUNT_ID = 'acc_demo_giro'
-const DEMO_IMPORT_ID = 'imp_demo_sample'
-const DEMO_IBAN = 'DE00DEMO00000000000000'
+export const DEMO_ACCOUNT_ID = 'acc_demo_giro'
+export const DEMO_IMPORT_ID = 'imp_demo_sample'
+export const DEMO_IBAN = 'DE00DEMO00000000000000'
 
 /** Shift calendar months from a YYYY-MM-DD anchor (day clamped to 28). */
 function monthShift(isoDate: string, deltaMonths: number): string {
@@ -445,16 +445,61 @@ function buildSeedTransactions(importedAt: string): Transaction[] {
   })
 }
 
+function isDemoAccount(account: { id: string; iban?: string | null }): boolean {
+  return account.id === DEMO_ACCOUNT_ID || account.iban === DEMO_IBAN
+}
+
+function isDemoTransaction(tx: {
+  accountId: string
+  importId?: string
+}): boolean {
+  return tx.accountId === DEMO_ACCOUNT_ID || tx.importId === DEMO_IMPORT_ID
+}
+
+function isDemoImport(batch: { id: string; accountId: string }): boolean {
+  return batch.id === DEMO_IMPORT_ID || batch.accountId === DEMO_ACCOUNT_ID
+}
+
+/** True when the store has banking or manual data that is not the sample set. */
+export function hasUserOwnedData(store: {
+  transactions: { accountId: string; importId?: string; origin?: string }[]
+  accounts: { id: string; iban?: string | null }[]
+  imports?: { id: string; accountId: string }[]
+}): boolean {
+  if (store.accounts.some((a) => a.id !== 'acc_manual' && !isDemoAccount(a))) {
+    return true
+  }
+  if (store.transactions.some((t) => !isDemoTransaction(t))) return true
+  if ((store.imports ?? []).some((i) => !isDemoImport(i))) return true
+  return false
+}
+
+/** Strip Demo Girokonto / sample-demo.csv rows. Safe to call on a user store. */
+export function omitDemoData<T extends AppStore>(store: T): T {
+  if (!store.isDemo && !store.accounts.some(isDemoAccount)) {
+    const hasDemoTx = store.transactions.some(isDemoTransaction)
+    const hasDemoImp = (store.imports ?? []).some(isDemoImport)
+    if (!hasDemoTx && !hasDemoImp) {
+      return { ...store, isDemo: false }
+    }
+  }
+  return {
+    ...store,
+    isDemo: false,
+    accounts: store.accounts.filter((a) => !isDemoAccount(a)),
+    transactions: store.transactions.filter((t) => !isDemoTransaction(t)),
+    imports: (store.imports ?? []).filter((i) => !isDemoImport(i)),
+  }
+}
+
 /** True when the store has no user-owned banking data yet. */
 export function isStoreEmptyOfUserData(store: {
-  transactions: unknown[]
-  accounts: { id: string }[]
+  transactions: { accountId: string; importId?: string }[]
+  accounts: { id: string; iban?: string | null }[]
+  imports?: { id: string; accountId: string }[]
   isDemo?: boolean
 }): boolean {
-  if (store.isDemo) return false
-  if (store.transactions.length > 0) return false
-  const bankAccounts = store.accounts.filter((a) => a.id !== 'acc_manual')
-  return bankAccounts.length === 0
+  return !hasUserOwnedData(store)
 }
 
 /** Sample household used until the user imports their own CSV. */

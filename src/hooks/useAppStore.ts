@@ -3,13 +3,19 @@ import type { CategoryInput } from '../lib/categories'
 import { syncCategoryRegistry } from '../lib/categories'
 import {
   applyLlmAssignments,
+  buildLlmSuggestions,
   categorizeWithLlm,
   llmSupported,
+  type AutoCategorizePreview,
+  type LlmProgress,
+  type LlmSuggestion,
 } from '../lib/llmCategorize'
 import {
   addAccountByIban,
   addCategory,
   addManualExpense,
+  applyLlmSuggestions,
+  deleteAccount,
   deleteCategory,
   deleteImport,
   deleteTransaction,
@@ -19,6 +25,7 @@ import {
   loadStore,
   reassignImport,
   renameAccount,
+  resetAllData,
   resetCategories,
   saveStore,
   setTransactionCategory,
@@ -35,6 +42,7 @@ export function useAppStore() {
   const [error, setError] = useState<string | null>(null)
   const [lastImport, setLastImport] = useState<ImportResult | null>(null)
   const [llmBusy, setLlmBusy] = useState(false)
+  const [llmProgress, setLlmProgress] = useState<LlmProgress | null>(null)
   const skipNextSave = useRef(true)
   const storeRef = useRef(store)
   storeRef.current = store
@@ -120,11 +128,17 @@ export function useAppStore() {
       }
 
       setLlmBusy(true)
+      setLlmProgress({ done: 0, total: 0 })
       try {
-        const categoryIds = (nextStore.categories ?? []).map((c) => c.id)
+        const categories = nextStore.categories ?? []
+        const categoryIds = categories.map((c) => c.id)
         const { assignments, provider } = await categorizeWithLlm(
           uncategorized,
-          categoryIds,
+          categories,
+          {
+            knownTransactions: nextStore.transactions,
+            onProgress: setLlmProgress,
+          },
         )
         const validIds = new Set(categoryIds)
         const { transactions, assigned } = applyLlmAssignments(
@@ -155,6 +169,7 @@ export function useAppStore() {
         }
       } finally {
         setLlmBusy(false)
+        setLlmProgress(null)
       }
     },
     [],
@@ -246,6 +261,10 @@ export function useAppStore() {
     setStore((prev) => renameAccount(prev, accountId, name))
   }, [])
 
+  const removeAccount = useCallback((accountId: string) => {
+    setStore((prev) => deleteAccount(prev, accountId))
+  }, [])
+
   const doReassignImport = useCallback(
     (importId: string, accountId: string) => {
       setStore((prev) => reassignImport(prev, importId, accountId))
@@ -266,6 +285,12 @@ export function useAppStore() {
   const applyImportedStore = useCallback((merged: AppStore) => {
     setError(null)
     setStore({ ...merged, isDemo: false })
+  }, [])
+
+  const doResetAllData = useCallback(() => {
+    setError(null)
+    setLastImport(null)
+    setStore(resetAllData())
   }, [])
 
   const doAddCategory = useCallback((input: CategoryInput) => {
@@ -290,6 +315,61 @@ export function useAppStore() {
     setStore((prev) => resetCategories(prev))
   }, [])
 
+  /** Propose categories for uncategorized txs; caller confirms before write. */
+  const categorizeUncategorized = useCallback(
+    async (
+      targets: AppStore['transactions'],
+    ): Promise<AutoCategorizePreview> => {
+      const pending = targets.filter(
+        (tx) => !tx.categoryOverride && tx.categoryId === 'uncategorized',
+      )
+      if (!llmSupported() || pending.length === 0) {
+        return { suggestions: [], attempted: pending.length }
+      }
+
+      setLlmBusy(true)
+      setLlmProgress({ done: 0, total: 0 })
+      try {
+        const current = storeRef.current
+        const categories = current.categories ?? []
+        const categoryIds = categories.map((c) => c.id)
+        const { assignments, provider } = await categorizeWithLlm(
+          pending,
+          categories,
+          {
+            knownTransactions: current.transactions,
+            onProgress: setLlmProgress,
+          },
+        )
+        const suggestions = buildLlmSuggestions(
+          pending,
+          assignments,
+          new Set(categoryIds),
+        )
+        return {
+          suggestions,
+          attempted: pending.length,
+          provider: provider === 'apple' ? 'apple' : 'bundled',
+        }
+      } catch (e) {
+        console.warn('Local LLM categorization failed:', e)
+        throw e instanceof Error ? e : new Error('error.llmCategorize')
+      } finally {
+        setLlmBusy(false)
+        setLlmProgress(null)
+      }
+    },
+    [],
+  )
+
+  const applyCategorizeSuggestions = useCallback(
+    (assignments: LlmSuggestion[]) => {
+      if (assignments.length === 0) return
+      setStore((prev) => applyLlmSuggestions(prev, assignments))
+    },
+    [],
+  )
+
   return {
     store,
     loading,
@@ -297,6 +377,7 @@ export function useAppStore() {
     error,
     lastImport,
     llmBusy,
+    llmProgress,
     setLastImport,
     importFile: doImport,
     importGenericFile: doImportGeneric,
@@ -305,12 +386,16 @@ export function useAppStore() {
     removeTransaction,
     removeImport,
     renameAccount: doRenameAccount,
+    deleteAccount: removeAccount,
     reassignImport: doReassignImport,
     addAccount: doAddAccount,
     applyImportedStore,
+    resetAllData: doResetAllData,
     addCategory: doAddCategory,
     updateCategoryDefinition: doUpdateCategoryDefinition,
     deleteCategory: doDeleteCategory,
     resetCategories: doResetCategories,
+    categorizeUncategorized,
+    applyCategorizeSuggestions,
   }
 }

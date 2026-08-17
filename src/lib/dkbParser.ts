@@ -1,25 +1,37 @@
 /**
- * DKB Girokonto CSV parser.
+ * German bank CSV parser (DKB plus other semicolon/comma Girokonto exports).
  *
- * Handles the post-2023 export format:
- * - Semicolon-delimited
- * - ~4 metadata lines before the header
- * - German dates (DD.MM.YYYY / DD.MM.YY) and decimal-comma amounts (-12,34)
+ * Handles:
+ * - DKB post-2023 (Buchungsdatum, Betrag (€), Umsatztyp, signed amounts)
+ * - DKB pre-2023 (Buchungstag, Betrag (EUR), combined counterparty)
+ * - Sparkasse / Volksbank / ING / Commerzbank / Deutsche Bank / Postbank
+ *   variants with Soll/Haben or unsigned Betrag + direction column
  * - UTF-8 or ISO-8859-1 encoding
  */
 
 import Papa from 'papaparse'
 import type { DkbAccountMeta, Transaction } from './types'
+import { parseGermanAmount, signedAmountFromParts } from './germanAmount'
 
-const HEADER_MARKERS = ['Buchungsdatum', 'Wertstellung', 'Betrag']
+export { parseGermanAmount }
+
+const DATE_HEADER =
+  /buchungsdatum|buchungstag|belegdatum|\bdate\b|\bbuchung\b|wertstellung/i
+const AMOUNT_HEADER = /betrag|amount\s*\(?eur\)?|soll|haben/i
+
+function headerDelimiter(line: string): ';' | ',' | null {
+  const semi = (line.match(/;/g) ?? []).length
+  const comma = (line.match(/,/g) ?? []).length
+  if (semi >= 3 && semi >= comma) return ';'
+  if (comma >= 3) return ','
+  return null
+}
 
 function findHeaderLineIndex(lines: string[]): number {
-  for (let i = 0; i < Math.min(lines.length, 20); i++) {
+  for (let i = 0; i < Math.min(lines.length, 30); i++) {
     const line = lines[i] ?? ''
-    if (
-      HEADER_MARKERS.every((m) => line.includes(m)) &&
-      line.includes(';')
-    ) {
+    if (!headerDelimiter(line)) continue
+    if (DATE_HEADER.test(line) && AMOUNT_HEADER.test(line)) {
       return i
     }
   }
@@ -31,9 +43,14 @@ function normalizeText(raw: string): string {
   return raw.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n')
 }
 
-/** True when the text contains the DKB Girokonto header row. */
-export function isDkbCsv(rawText: string): boolean {
+/** True when the text looks like a German (or DKB-style) bank booking export. */
+export function isGermanBankCsv(rawText: string): boolean {
   return findHeaderLineIndex(normalizeText(rawText).split('\n')) >= 0
+}
+
+/** @deprecated use isGermanBankCsv */
+export function isDkbCsv(rawText: string): boolean {
+  return isGermanBankCsv(rawText)
 }
 
 /**
@@ -56,30 +73,37 @@ export async function readFileAsText(file: File): Promise<string> {
 
 export function parseGermanDate(value: string): string | null {
   const trimmed = value.trim().replace(/^"|"$/g, '')
-  // DKB uses both DD.MM.YYYY and DD.MM.YY depending on export
-  const m = trimmed.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2}|\d{4})$/)
-  if (!m) return null
-  const day = m[1]!.padStart(2, '0')
-  const month = m[2]!.padStart(2, '0')
-  let year = m[3]!
-  if (year.length === 2) {
-    // Pivot: 00-69 → 20xx, 70-99 → 19xx
-    year = Number(year) < 70 ? `20${year}` : `19${year}`
-  }
-  return `${year}-${month}-${day}`
-}
+  if (!trimmed) return null
 
-export function parseGermanAmount(value: string): number | null {
-  const cleaned = value
-    .trim()
-    .replace(/^"|"$/g, '')
-    .replace(/\s/g, '')
-    .replace(/€/g, '')
-    .replace(/\./g, '') // thousand separators
-    .replace(',', '.')
-  if (!cleaned || cleaned === '-') return null
-  const n = Number(cleaned)
-  return Number.isFinite(n) ? n : null
+  const pad = (s: string) => s.padStart(2, '0')
+  const expandYear = (raw: string) =>
+    raw.length === 2 ? (Number(raw) < 70 ? `20${raw}` : `19${raw}`) : raw
+
+  // DKB uses both DD.MM.YYYY and DD.MM.YY depending on export
+  let m = trimmed.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2}|\d{4})$/)
+  if (m) {
+    return `${expandYear(m[3]!)}-${pad(m[2]!)}-${pad(m[1]!)}`
+  }
+
+  m = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)
+  if (m) {
+    return `${m[1]}-${pad(m[2]!)}-${pad(m[3]!)}`
+  }
+
+  m = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})/)
+  if (m) {
+    const year = expandYear(m[3]!)
+    let day = Number(m[1])
+    let month = Number(m[2])
+    if (month > 12 && day <= 12) {
+      ;[day, month] = [month, day]
+    }
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      return `${year}-${pad(String(month))}-${pad(String(day))}`
+    }
+  }
+
+  return null
 }
 
 function stripQuotes(value: string | undefined): string {
@@ -112,6 +136,38 @@ export function transactionContentKey(input: {
   ].join('|')
 }
 
+const CARD_PURPOSE =
+  /visa|mastercard|debitkartenumsatz|kartenzahlung|apple pay|google pay/i
+
+function normalizeIban(iban: string): string {
+  return iban.replace(/\s+/g, '').toUpperCase()
+}
+
+/**
+ * Identity for overlapping bank exports when the counterparty *name* changed
+ * (e.g. DKB placeholder "Max Mustermann" → the real sender) but the booking
+ * is the same SEPA transfer. Returns null for card clearing rows, where the
+ * merchant IBAN is shared and the name is the real discriminator.
+ */
+export function bookingIdentityKey(input: {
+  accountId: string
+  date: string
+  amount: number
+  purpose: string
+  iban: string
+}): string | null {
+  const iban = normalizeIban(input.iban)
+  if (!iban || /^0+$/.test(iban)) return null
+  if (CARD_PURPOSE.test(input.purpose)) return null
+  return [
+    input.accountId,
+    input.date,
+    input.amount.toFixed(2),
+    input.purpose.toLowerCase().trim(),
+    iban,
+  ].join('|')
+}
+
 /** Stable hash for deduplication within an account across overlapping CSV exports */
 export function transactionHash(input: {
   accountId: string
@@ -132,20 +188,35 @@ export function transactionHash(input: {
   return `tx_${input.accountId}_${(h >>> 0).toString(16)}_${h2.toString(16)}`
 }
 
+function normalizeHeader(name: string): string {
+  return name.replace(/"/g, '').trim().toLowerCase()
+}
+
 function getField(
   row: Record<string, string>,
   ...candidates: string[]
 ): string {
-  for (const key of Object.keys(row)) {
-    const normalized = key.replace(/"/g, '').trim().toLowerCase()
-    for (const c of candidates) {
-      if (
-        normalized === c.toLowerCase() ||
-        normalized.includes(c.toLowerCase())
-      ) {
-        return stripQuotes(row[key])
-      }
-    }
+  const keys = Object.keys(row)
+  for (const c of candidates) {
+    const want = c.toLowerCase()
+    const exact = keys.find((key) => normalizeHeader(key) === want)
+    if (exact) return stripQuotes(row[exact])
+  }
+  for (const c of candidates) {
+    const want = c.toLowerCase()
+    if (want.length < 4) continue
+    const partial = keys.find((key) => {
+      const n = normalizeHeader(key)
+      if (!n.includes(want)) return false
+      // Don't treat Umsatztyp / Wertstellung as the amount or date column
+      if (want === 'umsatz' && /typ|art/.test(n)) return false
+      if (want === 'wert' && /stellung|datum/.test(n)) return false
+      if (want === 'betrag' && /urspr/.test(n)) return false
+      if (want === 'soll' && /haben|typ/.test(n)) return false
+      if (want === 'haben' && /soll/.test(n)) return false
+      return true
+    })
+    if (partial) return stripQuotes(row[partial])
   }
   return ''
 }
@@ -205,6 +276,39 @@ export function suggestAccountName(meta: DkbAccountMeta, bank = 'DKB'): string {
   return `${bank} ${label}`
 }
 
+/** Guess the bank from metadata / header names (DKB omits its name on Girokonto CSVs). */
+export function detectBankName(rawText: string, meta?: DkbAccountMeta): string {
+  const sample = rawText.slice(0, 5000)
+  const lower = sample.toLowerCase()
+  if (/\bdkb\b|deutsche kreditbank/.test(lower)) return 'DKB'
+  if (
+    meta?.iban &&
+    meta.label &&
+    /girokonto|visa|tagesgeld|kreditkarte/i.test(meta.label)
+  ) {
+    return 'DKB'
+  }
+  if (
+    /zahlungspflichtige/i.test(sample) &&
+    /zahlungsempfänger/i.test(sample) &&
+    /umsatztyp/i.test(sample)
+  ) {
+    return 'DKB'
+  }
+  if (/sparkasse/.test(lower)) return 'Sparkasse'
+  if (/\bing-diba\b|\bing bank\b/.test(lower)) return 'ING'
+  if (/\bn26\b/.test(lower)) return 'N26'
+  if (/commerzbank/.test(lower)) return 'Commerzbank'
+  if (/postbank/.test(lower)) return 'Postbank'
+  if (/consors/.test(lower)) return 'Consorsbank'
+  if (/comdirect/.test(lower)) return 'comdirect'
+  if (/\bc24\b/.test(lower)) return 'C24'
+  if (/volksbank|raiffeisen/.test(lower)) return 'Volksbank'
+  if (/deutsche bank/.test(lower)) return 'Deutsche Bank'
+  if (/tomorrow/.test(lower)) return 'Tomorrow'
+  return 'Bank'
+}
+
 export function parseDkbCsv(
   rawText: string,
   accountId: string,
@@ -215,13 +319,14 @@ export function parseDkbCsv(
 
   if (headerIdx < 0) {
     throw new Error(
-      'Could not find DKB CSV header. Expected columns like Buchungsdatum, Wertstellung, Betrag (€).',
+      'Could not find a bank CSV header. Expected a date column (Buchungsdatum / Buchungstag) and an amount (Betrag).',
     )
   }
 
+  const delimiter = headerDelimiter(lines[headerIdx] ?? '') ?? ';'
   const csvBody = lines.slice(headerIdx).join('\n')
   const parsed = Papa.parse<Record<string, string>>(csvBody, {
-    delimiter: ';',
+    delimiter,
     header: true,
     skipEmptyLines: true,
     quoteChar: '"',
@@ -238,21 +343,84 @@ export function parseDkbCsv(
   const transactions: Transaction[] = []
 
   for (const row of parsed.data) {
-    const dateRaw = getField(row, 'Buchungsdatum')
-    const valueDateRaw = getField(row, 'Wertstellung')
-    const amountRaw = getField(row, 'Betrag (€)', 'Betrag(€)', 'Betrag')
+    const dateRaw = getField(
+      row,
+      'Buchungsdatum',
+      'Buchungstag',
+      'Belegdatum',
+      'Buchung',
+      'Datum',
+      'Date',
+      'Booking date',
+    )
+    const valueDateRaw = getField(
+      row,
+      'Wertstellung',
+      'Valutadatum',
+      'Valuta',
+    )
+    const amountRaw = getField(
+      row,
+      'Betrag (€)',
+      'Betrag (EUR)',
+      'Betrag(€)',
+      'Amount (EUR)',
+      'Betrag',
+      'Amount',
+      'Umsatz',
+    )
     const date = parseGermanDate(dateRaw)
-    const amount = parseGermanAmount(amountRaw)
+    const type = getField(
+      row,
+      'Umsatztyp',
+      'Umsatzart',
+      'S/H',
+      'Soll/Haben',
+      'Transaction type',
+      'Buchungstext',
+    )
+    const amount = signedAmountFromParts({
+      amountRaw,
+      sollRaw: getField(row, 'Soll'),
+      habenRaw: getField(row, 'Haben'),
+      directionRaw: type,
+    })
 
     if (!date || amount === null) continue
 
     const status = getField(row, 'Status')
-    const payer = getField(row, 'Zahlungspflichtige')
-    const payee = getField(row, 'Zahlungsempfänger')
-    const purpose = getField(row, 'Verwendungszweck')
-    const type = getField(row, 'Umsatztyp')
-    const iban = getField(row, 'IBAN')
-    const counterparty = pickCounterparty(type, payer, payee)
+    const payer = getField(
+      row,
+      'Zahlungspflichtige',
+      'Auftraggeber',
+    )
+    const payee = getField(
+      row,
+      'Zahlungsempfänger',
+      'Empfänger',
+      'Begünstigter',
+      'Beguenstigter',
+      'Payee',
+      'Beschreibung',
+    )
+    const combinedParty = getField(
+      row,
+      'Auftraggeber / Begünstigter',
+      'Beguenstigter/Zahlungspflichtiger',
+      'Auftraggeber/Empfänger',
+      'Partner',
+    )
+    const purpose = getField(
+      row,
+      'Verwendungszweck',
+      'Buchungstext',
+      'Beschreibung',
+      'Payment reference',
+      'Description',
+    )
+    const iban = getField(row, 'IBAN', 'Kontonummer', 'Account number')
+    const counterparty =
+      pickCounterparty(type, payer, payee) || combinedParty
 
     const id = transactionHash({
       accountId,

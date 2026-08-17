@@ -1,10 +1,13 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import {
   ArrowDownLeft,
   ArrowUpRight,
   ArrowsLeftRight,
+  CircleNotch,
+  Sparkle,
   type Icon,
 } from '@phosphor-icons/react'
+import { llmSupported, suggestionMemberCount, type AutoCategorizePreview, type LlmProgress, type LlmSuggestion } from '../lib/llmCategorize'
 import type { Account, CategoryId, Transaction } from '../lib/types'
 import {
   filterTransactions,
@@ -17,7 +20,9 @@ import {
 } from '../lib/categorize'
 import { parseISO, format } from 'date-fns'
 import { CategorySelect } from './CategorySelect'
-import { CategoryIcon } from './CategoryIcon'
+import { CategoryFilter, type CategoryFilterValue } from './CategoryFilter'
+import { LlmCategoryReviewDialog } from './LlmCategoryReviewDialog'
+import { LlmProgressBar } from './LlmProgressBar'
 import { useLocale } from '../hooks/useLocale'
 
 const FLOW_ICONS: Record<TransactionFlow, Icon> = {
@@ -40,6 +45,11 @@ interface Props {
   title?: string
   /** DOM id for deep-linking / scroll targets. */
   id?: string
+  /** On-device AI for uncategorized rows (Buchungen tab). */
+  onAutoCategorize?: (txs: Transaction[]) => Promise<AutoCategorizePreview>
+  onApplySuggestions?: (suggestions: LlmSuggestion[]) => void
+  llmBusy?: boolean
+  llmProgress?: LlmProgress | null
 }
 
 /** Share / unit quantity embedded in Trade Republic purpose text. */
@@ -70,13 +80,32 @@ export function TransactionTable({
   onDeleteManual,
   title,
   id,
+  onAutoCategorize,
+  onApplySuggestions,
+  llmBusy = false,
+  llmProgress = null,
 }: Props) {
   const { t, categories, formatEur, locale } = useLocale()
   const localeTag = locale === 'de' ? 'de-DE' : 'en-US'
   const [query, setQuery] = useState('')
-  const [categoryFilter, setCategoryFilter] = useState<CategoryId | 'all'>('all')
+  const [categoryFilter, setCategoryFilter] =
+    useState<CategoryFilterValue>('all')
   const [flowFilter, setFlowFilter] = useState<FlowFilter>('all')
   const [uncategorizedFirst, setUncategorizedFirst] = useState(true)
+  const [aiStatus, setAiStatus] = useState<
+    { kind: 'ok'; count: number } | { kind: 'error' } | null
+  >(null)
+  const [review, setReview] = useState<LlmSuggestion[] | null>(null)
+  const appliedThisRun = useRef(0)
+  const showAi =
+    Boolean(onAutoCategorize && onApplySuggestions) && llmSupported()
+  const uncategorizedCount = useMemo(
+    () =>
+      transactions.filter(
+        (tx) => !tx.categoryOverride && tx.categoryId === 'uncategorized',
+      ).length,
+    [transactions],
+  )
 
   const flowLabel: Record<TransactionFlow, string> = {
     expense: t('flow.expense'),
@@ -87,7 +116,7 @@ export function TransactionTable({
   const filtered = useMemo(() => {
     const list = filterTransactions(transactions, {
       query,
-      categoryId: categoryFilter,
+      categoryIds: categoryFilter,
       flow: flowFilter,
       accounts,
     })
@@ -110,18 +139,6 @@ export function TransactionTable({
   ])
 
   const showAccountCol = accounts.length > 1
-  const expenseCats = categories.filter(
-    (c) =>
-      !c.isIncome &&
-      !c.excludeFromTotals &&
-      c.id !== 'uncategorized' &&
-      c.id !== 'other',
-  )
-  const incomeCats = categories.filter((c) => c.isIncome)
-  const excludedCats = categories.filter((c) => c.excludeFromTotals)
-  const otherCats = categories.filter(
-    (c) => c.id === 'uncategorized' || c.id === 'other',
-  )
 
   const counts = useMemo(() => {
     let expense = 0
@@ -135,6 +152,42 @@ export function TransactionTable({
     }
     return { expense, income, transfer }
   }, [transactions])
+
+  const closeReview = (applied: number) => {
+    appliedThisRun.current = applied
+    setReview(null)
+    if (applied > 0) {
+      setAiStatus({ kind: 'ok', count: applied })
+    }
+  }
+
+  const acceptOne = (id: string) => {
+    if (!onApplySuggestions || !review) return
+    const item = review.find((s) => s.id === id)
+    if (!item) return
+    onApplySuggestions([item])
+    const applied = appliedThisRun.current + suggestionMemberCount(item)
+    appliedThisRun.current = applied
+    const remaining = review.filter((s) => s.id !== id)
+    if (remaining.length === 0) closeReview(applied)
+    else setReview(remaining)
+  }
+
+  const skipOne = (id: string) => {
+    if (!review) return
+    const remaining = review.filter((s) => s.id !== id)
+    if (remaining.length === 0) closeReview(appliedThisRun.current)
+    else setReview(remaining)
+  }
+
+  const applyAll = () => {
+    if (!onApplySuggestions || !review || review.length === 0) return
+    onApplySuggestions(review)
+    closeReview(
+      appliedThisRun.current +
+        review.reduce((n, item) => n + suggestionMemberCount(item), 0),
+    )
+  }
 
   return (
     <section className="card" id={id}>
@@ -173,47 +226,14 @@ export function TransactionTable({
           onChange={(e) => setQuery(e.target.value)}
           className="search"
         />
-        <div className="cat-filter">
-          {categoryFilter !== 'all' && (
-            <CategoryIcon categoryId={categoryFilter} badge size={13} />
-          )}
-          <select
-            value={categoryFilter}
-            onChange={(e) =>
-              setCategoryFilter(e.target.value as CategoryId | 'all')
-            }
-          >
-            <option value="all">{t('tx.allCategories')}</option>
-            <optgroup label={t('catGroup.expenses')}>
-              {expenseCats.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.label}
-                </option>
-              ))}
-            </optgroup>
-            <optgroup label={t('catGroup.income')}>
-              {incomeCats.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.label}
-                </option>
-              ))}
-            </optgroup>
-            <optgroup label={t('catGroup.excluded')}>
-              {excludedCats.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.label}
-                </option>
-              ))}
-            </optgroup>
-            <optgroup label={t('catGroup.other')}>
-              {otherCats.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.label}
-                </option>
-              ))}
-            </optgroup>
-          </select>
-        </div>
+        <CategoryFilter
+          categories={categories}
+          value={categoryFilter}
+          onChange={setCategoryFilter}
+          grouped
+          allLabel={t('tx.allCategories')}
+          ariaLabel={t('categoryFilter.aria')}
+        />
         <label className="checkbox">
           <input
             type="checkbox"
@@ -222,6 +242,70 @@ export function TransactionTable({
           />
           {t('tx.uncategorizedFirst')}
         </label>
+        {showAi && onAutoCategorize && onApplySuggestions && (
+          <div className="toolbar-ai">
+            {aiStatus?.kind === 'ok' && (
+              <span className="toolbar-ai-status" role="status">
+                {aiStatus.count > 0
+                  ? t('tx.autoCategorizeDone', { count: aiStatus.count })
+                  : t('tx.autoCategorizeNone')}
+              </span>
+            )}
+            {aiStatus?.kind === 'error' && (
+              <span className="toolbar-ai-status toolbar-ai-status--fail" role="status">
+                {t('tx.autoCategorizeError')}
+              </span>
+            )}
+            <button
+              type="button"
+              className="btn-secondary btn-ai"
+              disabled={llmBusy || uncategorizedCount === 0 || review !== null}
+              title={t('tx.autoCategorizeTitle')}
+              aria-busy={llmBusy}
+              onClick={() => {
+                setAiStatus(null)
+                appliedThisRun.current = 0
+                void onAutoCategorize(transactions)
+                  .then((result) => {
+                    if (result.suggestions.length === 0) {
+                      setAiStatus({ kind: 'ok', count: 0 })
+                      return
+                    }
+                    setReview(result.suggestions)
+                  })
+                  .catch(() => {
+                    setAiStatus({ kind: 'error' })
+                  })
+              }}
+            >
+              {llmBusy ? (
+                <CircleNotch
+                  size={14}
+                  weight="bold"
+                  className="btn-ai-spin"
+                  aria-hidden
+                />
+              ) : (
+                <Sparkle size={14} weight="fill" aria-hidden />
+              )}
+              {llmBusy
+                ? t('tx.autoCategorizeBusy')
+                : uncategorizedCount > 0
+                  ? t('tx.autoCategorizeCount', { count: uncategorizedCount })
+                  : t('tx.autoCategorize')}
+            </button>
+            {llmBusy && llmProgress && llmProgress.total > 0 ? (
+              <LlmProgressBar
+                done={llmProgress.done}
+                total={llmProgress.total}
+                label={t('tx.autoCategorizeProgress', {
+                  done: llmProgress.done,
+                  total: llmProgress.total,
+                })}
+              />
+            ) : null}
+          </div>
+        )}
       </div>
 
       <div className="table-wrap">
@@ -273,6 +357,24 @@ export function TransactionTable({
           </tbody>
         </table>
       </div>
+
+      {onApplySuggestions && (
+        <LlmCategoryReviewDialog
+          open={review !== null && review.length > 0}
+          suggestions={review ?? []}
+          onChangeCategory={(id, categoryId) => {
+            setReview((prev) =>
+              prev
+                ? prev.map((s) => (s.id === id ? { ...s, categoryId } : s))
+                : prev,
+            )
+          }}
+          onAccept={acceptOne}
+          onSkip={skipOne}
+          onApplyAll={applyAll}
+          onDismiss={() => closeReview(appliedThisRun.current)}
+        />
+      )}
     </section>
   )
 }
@@ -409,6 +511,7 @@ function TransactionRow({
         <CategorySelect
           value={tx.categoryId}
           counterparty={tx.counterparty}
+          amount={tx.amount}
           ariaLabel={t('tx.categoryAria', {
             name: tx.counterparty || t('tx.transaction'),
           })}

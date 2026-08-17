@@ -119,9 +119,9 @@ export function categorizeTransaction(
     return 'securities'
   }
 
-  // Own-account / SEPA transfers before name-based salary rules
+  // Own-account / SEPA cash movements before name-based salary rules
   if (isCashTransfer(tx)) {
-    return 'transfer'
+    return 'excluded'
   }
 
   const sorted = [...rules].sort((a, b) => {
@@ -135,6 +135,8 @@ export function categorizeTransaction(
     if (!matchesRule(text, rule)) continue
     // Income rules must not tag outflows (e.g. own-name salary rule on transfers)
     if (getCategoryMap()[rule.categoryId]?.isIncome && tx.amount < 0) continue
+    // Expense rules must not tag inflows
+    if (isExpenseCategory(rule.categoryId) && tx.amount > 0) continue
     return rule.categoryId
   }
 
@@ -161,22 +163,22 @@ export function categorizeAll(
 ): Transaction[] {
   return transactions.map((tx) => {
     if (tx.categoryOverride) {
-      // Re-tag auto-overridden broker trades that were stored as transfer
+      // Re-tag auto-overridden broker trades that were stored as cash movements
       if (
-        tx.categoryId === 'transfer' &&
+        (tx.categoryId === 'excluded' || tx.categoryId === 'transfer') &&
         isSecuritiesTrade(tx) &&
         tx.origin === 'bank'
       ) {
         return { ...tx, categoryId: 'securities' }
       }
-      // Re-tag TR cash transfers that were auto-mapped then overridden by rules
+      // Re-tag TR cash movements that were auto-mapped then overridden by rules
       // before transfer types were recognized (e.g. salary via name match).
       if (
         tx.origin === 'bank' &&
         isCashTransfer(tx) &&
         (tx.categoryId === 'salary' || tx.categoryId === 'uncategorized')
       ) {
-        return { ...tx, categoryId: 'transfer', categoryOverride: true }
+        return { ...tx, categoryId: 'excluded', categoryOverride: true }
       }
       return tx
     }
@@ -202,6 +204,16 @@ export function isIncomeCategory(categoryId: CategoryId): boolean {
   return Boolean(getCategoryMap()[categoryId]?.isIncome)
 }
 
+/** True when this category may be assigned for this cash direction. */
+export function categoryFitsCashflow(
+  categoryId: CategoryId,
+  amount: number,
+): boolean {
+  if (categoryId === 'other') return true
+  if (amount >= 0) return isIncomeCategory(categoryId)
+  return isExpenseCategory(categoryId)
+}
+
 export function countsTowardTotals(categoryId: CategoryId): boolean {
   return !getCategoryMap()[categoryId]?.excludeFromTotals
 }
@@ -210,7 +222,7 @@ export type TransactionFlow = 'income' | 'expense' | 'transfer'
 
 /**
  * Classify a booking for UI filters / badges.
- * Categories with excludeFromTotals (transfer, securities, excluded) are neutral.
+ * Categories with excludeFromTotals (securities, excluded) are neutral.
  */
 export function transactionFlow(tx: Transaction): TransactionFlow {
   const map = getCategoryMap()

@@ -11,6 +11,12 @@
 import Papa from 'papaparse'
 import type { Transaction } from './types'
 import { transactionHash } from './dkbParser'
+import {
+  parseFlexibleAmount,
+  signedAmountFromParts,
+} from './germanAmount'
+
+export { parseFlexibleAmount }
 
 export const REQUIRED_MAPPING_FIELDS = ['date', 'amount'] as const
 export const OPTIONAL_MAPPING_FIELDS = ['counterparty', 'purpose', 'iban'] as const
@@ -137,57 +143,6 @@ export function parseFlexibleDate(value: string): string | null {
   return null
 }
 
-export function parseFlexibleAmount(value: string): number | null {
-  let s = value
-    .trim()
-    .replace(/^"|"$/g, '')
-    .replace(/€|EUR|\$|£|CHF/gi, '')
-    .replace(/[\s\u00A0']/g, '')
-  if (!s) return null
-
-  // Trailing minus ("12,34-") and accounting parentheses ("(12.34)")
-  let negative = false
-  if (s.endsWith('-')) {
-    negative = true
-    s = s.slice(0, -1)
-  }
-  if (s.startsWith('(') && s.endsWith(')')) {
-    negative = true
-    s = s.slice(1, -1)
-  }
-  if (s.startsWith('-')) {
-    negative = true
-    s = s.slice(1)
-  }
-  s = s.replace(/^\+/, '')
-
-  const lastComma = s.lastIndexOf(',')
-  const lastDot = s.lastIndexOf('.')
-
-  if (lastComma >= 0 && lastDot >= 0) {
-    // The later separator is the decimal one
-    if (lastComma > lastDot) {
-      s = s.replace(/\./g, '').replace(',', '.')
-    } else {
-      s = s.replace(/,/g, '')
-    }
-  } else if (lastComma >= 0) {
-    // Decimal comma (German); multiple commas = thousands
-    s =
-      s.indexOf(',') === lastComma
-        ? s.replace(',', '.')
-        : s.replace(/,/g, '')
-  } else if (lastDot >= 0 && s.indexOf('.') !== lastDot) {
-    // Multiple dots = German thousand separators
-    s = s.replace(/\./g, '')
-  }
-
-  if (!s || !/^\d/.test(s)) return null
-  const n = Number(s)
-  if (!Number.isFinite(n)) return null
-  return negative ? -n : n
-}
-
 function looksLikeHeaderLine(cells: string[]): boolean {
   let textCells = 0
   for (const raw of cells) {
@@ -280,8 +235,6 @@ const COLUMN_SYNONYMS: Record<MappingField, string[]> = {
     'amount',
     'umsatz',
     'summe',
-    'wert',
-    'value',
   ],
   counterparty: [
     'zahlungsempfänger*in',
@@ -314,29 +267,69 @@ function normalizeColumnName(name: string): string {
   return name.trim().replace(/^"|"$/g, '').toLowerCase()
 }
 
+function isPlausibleAmountColumn(name: string): boolean {
+  const n = normalizeColumnName(name)
+  return !/typ|art|text|stellung|datum|zweck|status|iban|referenz|beschreibung|pflichtig|empfänger/.test(
+    n,
+  )
+}
+
+function findColumn(
+  columns: string[],
+  used: Set<string>,
+  synonyms: string[],
+  extraFilter?: (name: string) => boolean,
+): string | undefined {
+  for (const syn of synonyms) {
+    const match = columns.find(
+      (c) =>
+        !used.has(c) &&
+        normalizeColumnName(c) === syn &&
+        (extraFilter ? extraFilter(c) : true),
+    )
+    if (match) return match
+  }
+  for (const syn of synonyms) {
+    const match = columns.find(
+      (c) =>
+        !used.has(c) &&
+        normalizeColumnName(c).includes(syn) &&
+        (extraFilter ? extraFilter(c) : true),
+    )
+    if (match) return match
+  }
+  return undefined
+}
+
+export function isConfidentBankMapping(columns: string[]): boolean {
+  const mapping = suggestMapping(columns)
+  if (!mapping.date) return false
+  const dateOk = /buchung|beleg|datum|date|valuta/.test(
+    normalizeColumnName(mapping.date),
+  )
+  if (!dateOk) return false
+  if (mapping.amount) {
+    return /betrag|amount|umsatz|summe/.test(
+      normalizeColumnName(mapping.amount),
+    )
+  }
+  return Boolean(
+    findNamedColumn(columns, 'Soll') && findNamedColumn(columns, 'Haben'),
+  )
+}
+
 export function suggestMapping(columns: string[]): ColumnMapping {
   const mapping: ColumnMapping = {}
   const used = new Set<string>()
 
   for (const field of MAPPING_FIELDS) {
     const synonyms = COLUMN_SYNONYMS[field]
-
-    let match: string | undefined
-    for (const syn of synonyms) {
-      match = columns.find(
-        (c) => !used.has(c) && normalizeColumnName(c) === syn,
-      )
-      if (match) break
-    }
-    if (!match) {
-      for (const syn of synonyms) {
-        match = columns.find(
-          (c) => !used.has(c) && normalizeColumnName(c).includes(syn),
-        )
-        if (match) break
-      }
-    }
-
+    const match = findColumn(
+      columns,
+      used,
+      synonyms,
+      field === 'amount' ? isPlausibleAmountColumn : undefined,
+    )
     if (match) {
       mapping[field] = match
       used.add(match)
@@ -344,6 +337,24 @@ export function suggestMapping(columns: string[]): ColumnMapping {
   }
 
   return mapping
+}
+
+const DIRECTION_SYNONYMS = [
+  'umsatztyp',
+  'umsatzart',
+  'soll/haben',
+  's/h',
+  'transaction type',
+  'booking type',
+]
+
+function findDirectionColumn(columns: string[]): string | undefined {
+  return findColumn(columns, new Set(), DIRECTION_SYNONYMS)
+}
+
+function findNamedColumn(columns: string[], ...names: string[]): string | undefined {
+  const lower = names.map((n) => n.toLowerCase())
+  return columns.find((c) => lower.includes(normalizeColumnName(c)))
 }
 
 function cell(row: Record<string, string>, column: string | undefined): string {
@@ -359,13 +370,19 @@ export function mapCsvRows(
   const mapped: MappedRow[] = []
   let skipped = 0
 
-  if (!mapping.date || !mapping.amount) {
+  if (!mapping.date) {
     return { rows: [], skipped: rows.length }
   }
 
   for (const row of rows) {
     const date = parseFlexibleDate(cell(row, mapping.date))
-    const amount = parseFlexibleAmount(cell(row, mapping.amount))
+    const columns = Object.keys(row)
+    const amount = signedAmountFromParts({
+      amountRaw: mapping.amount ? cell(row, mapping.amount) : '',
+      sollRaw: cell(row, findNamedColumn(columns, 'Soll')),
+      habenRaw: cell(row, findNamedColumn(columns, 'Haben')),
+      directionRaw: cell(row, findDirectionColumn(columns)),
+    })
     if (!date || amount === null) {
       skipped++
       continue

@@ -62,6 +62,27 @@ public func uebrig_apple_fm_categorize(
   return nil
 }
 
+/// Free-form completion for a single prompt. Caller must free the result.
+@_cdecl("uebrig_apple_fm_complete")
+public func uebrig_apple_fm_complete(
+  _ prompt: UnsafePointer<CChar>?
+) -> UnsafeMutablePointer<CChar>? {
+  #if canImport(FoundationModels)
+  if #available(macOS 26.0, *) {
+    guard let prompt else { return nil }
+    let text = String(cString: prompt)
+    do {
+      let out = try AppleFMBridge.complete(prompt: text)
+      return strdup(out)
+    } catch {
+      fputs("uebrig Apple FM complete: \(error.localizedDescription)\n", stderr)
+      return nil
+    }
+  }
+  #endif
+  return nil
+}
+
 @_cdecl("uebrig_apple_fm_free")
 public func uebrig_apple_fm_free(_ ptr: UnsafeMutablePointer<CChar>?) {
   if let ptr {
@@ -74,6 +95,21 @@ public func uebrig_apple_fm_free(_ ptr: UnsafeMutablePointer<CChar>?) {
 enum AppleFMBridge {
   static func isAvailable() -> Bool {
     SystemLanguageModel.default.isAvailable
+  }
+
+  static func complete(prompt: String) throws -> String {
+    guard isAvailable() else {
+      throw NSError(
+        domain: "uebrig.apple_fm",
+        code: 1,
+        userInfo: [NSLocalizedDescriptionKey: "Apple Foundation Models unavailable"]
+      )
+    }
+    let session = LanguageModelSession()
+    return try runBlocking {
+      let response = try await session.respond(to: prompt)
+      return response.content
+    }
   }
 
   struct TxIn: Decodable {

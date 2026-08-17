@@ -91,7 +91,7 @@ export function mapTradeRepublicType(
       'SEPA_TRANSFER',
     ].includes(t)
   ) {
-    return 'transfer'
+    return 'excluded'
   }
 
   if (['TAX', 'TAX_CORRECTION', 'WITHHOLDING_TAX'].includes(t)) {

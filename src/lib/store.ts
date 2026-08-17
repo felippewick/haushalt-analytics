@@ -16,17 +16,20 @@ import {
   canDeleteCategory,
   cloneDefaultCategories,
   normalizeCategories,
+  remapRetiredCategoryId,
   syncCategoryRegistry,
   uniqueCategoryId,
   type CategoryInput,
 } from './categories'
 import { categorizeAll } from './categorize'
 import {
+  detectBankName,
   extractDkbAccountMeta,
-  isDkbCsv,
+  isGermanBankCsv,
   parseDkbCsv,
   readFileAsText,
   suggestAccountName,
+  bookingIdentityKey,
   transactionContentKey,
   transactionHash,
 } from './dkbParser'
@@ -41,7 +44,7 @@ import {
   parseTradeRepublicCsv,
   suggestTradeRepublicAccountName,
 } from './tradeRepublicParser'
-import { createSeedStore, isStoreEmptyOfUserData } from './seedData'
+import { createSeedStore, hasUserOwnedData, omitDemoData } from './seedData'
 
 /** Ids that must survive hydrate (do not rewrite to content hashes). */
 function hasStableTransactionId(id: string): boolean {
@@ -129,6 +132,10 @@ export function emptyStore(): AppStore {
     lastImportedAt: null,
     categories,
   }
+}
+
+export function resetAllData(): AppStore {
+  return createSeedStore()
 }
 
 function createImportId(): string {
@@ -329,6 +336,18 @@ export function renameAccount(
   }
 }
 
+/** Remove a bank account and all of its transactions and import batches. */
+export function deleteAccount(store: AppStore, accountId: string): AppStore {
+  if (accountId === MANUAL_ACCOUNT_ID) return store
+  if (!store.accounts.some((a) => a.id === accountId)) return store
+  return {
+    ...store,
+    accounts: store.accounts.filter((a) => a.id !== accountId),
+    imports: (store.imports ?? []).filter((i) => i.accountId !== accountId),
+    transactions: store.transactions.filter((t) => t.accountId !== accountId),
+  }
+}
+
 /** Migrate v1 stores (no accounts) and backfill accountId / stable ids. */
 function migrateTransactions(
   rawTxs: Array<Partial<Transaction> & { id: string }>,
@@ -391,10 +410,98 @@ function migrateTransactions(
 
   return {
     accounts: nextAccounts,
-    transactions: removeMisplacedTradeRepublicDuplicates(nextAccounts, [
-      ...byId.values(),
-    ]).sort((a, b) => b.date.localeCompare(a.date)),
+    transactions: dropPlaceholderCounterparties(
+      collapseRenamedCounterpartyDuplicates(
+        removeMisplacedTradeRepublicDuplicates(nextAccounts, [
+          ...byId.values(),
+        ]),
+      ),
+    ).sort((a, b) => b.date.localeCompare(a.date)),
   }
+}
+
+/** DKB/TR sample account that shows up as Max Mustermann in demo exports. */
+const PLACEHOLDER_IBAN = 'DE12120300001000000001'
+
+function isPlaceholderCounterparty(name: string): boolean {
+  const n = name.toLowerCase().replace(/\s+/g, ' ').trim()
+  return (
+    /\b(max|erika)\s+mustermann\b/.test(n) ||
+    n === 'erika mustermann und max mustermann'
+  )
+}
+
+/**
+ * Drop leftover sample-name bookings (Max/Erika Mustermann) after a real CSV
+ * re-import. Real people who replaced those names are kept by the collapse
+ * step above.
+ */
+function dropPlaceholderCounterparties(
+  transactions: Transaction[],
+): Transaction[] {
+  return transactions.filter((tx) => {
+    if (tx.origin === 'manual') return true
+    if (isPlaceholderCounterparty(tx.counterparty)) return false
+    const iban = tx.iban.replace(/\s+/g, '').toUpperCase()
+    if (iban === PLACEHOLDER_IBAN) return false
+    return true
+  })
+}
+
+/**
+ * Overlapping CSV exports sometimes rename the counterparty (placeholder
+ * Mustermann names → real names). Keep the newest row; preserve a category
+ * override from either copy.
+ */
+function collapseRenamedCounterpartyDuplicates(
+  transactions: Transaction[],
+): Transaction[] {
+  const byKey = new Map<string, Transaction>()
+  const passthrough: Transaction[] = []
+
+  for (const tx of transactions) {
+    if (tx.origin === 'manual') {
+      passthrough.push(tx)
+      continue
+    }
+    const key = bookingIdentityKey(tx)
+    if (!key) {
+      passthrough.push(tx)
+      continue
+    }
+    const existing = byKey.get(key)
+    if (!existing) {
+      byKey.set(key, tx)
+      continue
+    }
+    const existingPlaceholder = isPlaceholderCounterparty(existing.counterparty)
+    const incomingPlaceholder = isPlaceholderCounterparty(tx.counterparty)
+    const newer =
+      existingPlaceholder !== incomingPlaceholder
+        ? existingPlaceholder
+          ? tx
+          : existing
+        : tx.importedAt > existing.importedAt
+          ? tx
+          : existing.importedAt > tx.importedAt
+            ? existing
+            : tx.id > existing.id
+              ? tx
+              : existing
+    const older = newer === tx ? existing : tx
+    byKey.set(key, {
+      ...newer,
+      categoryId: newer.categoryOverride
+        ? newer.categoryId
+        : older.categoryOverride
+          ? older.categoryId
+          : newer.categoryId,
+      categoryOverride:
+        newer.categoryOverride || older.categoryOverride || undefined,
+    })
+  }
+
+  return [...passthrough, ...byKey.values()]
 }
 
 /**
@@ -455,7 +562,6 @@ export function hydrateStore(raw: Partial<AppStore> | null): AppStore {
   const defaultRules = DEFAULT_RULES.filter((r) =>
     categoryIds.has(r.categoryId),
   )
-  const rules = [...userRules, ...defaultRules]
   const { accounts, transactions: migratedTxs } = migrateTransactions(
     (raw.transactions ?? []) as Array<Partial<Transaction> & { id: string }>,
     (raw.accounts ?? []).map((a) => {
@@ -470,8 +576,18 @@ export function hydrateStore(raw: Partial<AppStore> | null): AppStore {
     }),
   )
 
+  const remappedTxs = migratedTxs.map((t) => {
+    const categoryId = remapRetiredCategoryId(t.categoryId)
+    return categoryId === t.categoryId ? t : { ...t, categoryId }
+  })
+  const remappedUserRules = userRules.map((r) => {
+    const categoryId = remapRetiredCategoryId(r.categoryId)
+    return categoryId === r.categoryId ? r : { ...r, categoryId }
+  })
+  const rules = [...remappedUserRules, ...defaultRules]
+
   const { transactions, imports } = backfillImportBatches(
-    categorizeAll(migratedTxs, rules),
+    categorizeAll(remappedTxs, rules),
     Array.isArray(raw.imports) ? raw.imports : [],
   )
 
@@ -486,8 +602,13 @@ export function hydrateStore(raw: Partial<AppStore> | null): AppStore {
     categories,
   }
 
-  if (isStoreEmptyOfUserData(hydrated)) return createSeedStore()
-  return repairGemeinschaftskontoAccount(hydrated)
+  if (!hasUserOwnedData(hydrated)) {
+    if (hydrated.lastImportedAt) {
+      return { ...omitDemoData(hydrated), isDemo: false }
+    }
+    return createSeedStore()
+  }
+  return repairGemeinschaftskontoAccount(omitDemoData(hydrated))
 }
 
 async function loadStoreFromTauri(): Promise<AppStore> {
@@ -504,6 +625,17 @@ async function loadStoreFromTauri(): Promise<AppStore> {
   return hydrateStore(JSON.parse(raw) as Partial<AppStore>)
 }
 
+function persistableStore(store: AppStore): AppStore {
+  const clean = hasUserOwnedData(store) ? omitDemoData(store) : store
+  return {
+    ...clean,
+    version: 2,
+    isDemo: clean.isDemo || undefined,
+    rules: clean.rules.filter((r) => r.source === 'user'),
+    categories: clean.categories ?? cloneDefaultCategories(),
+  }
+}
+
 async function saveStoreToTauri(store: AppStore): Promise<void> {
   const { appDataDir, join } = await import('@tauri-apps/api/path')
   const { mkdir, writeTextFile } = await import('@tauri-apps/plugin-fs')
@@ -511,15 +643,7 @@ async function saveStoreToTauri(store: AppStore): Promise<void> {
   const dir = await appDataDir()
   await mkdir(dir, { recursive: true })
   const storePath = await join(dir, TAURI_STORE_FILE)
-
-  const toSave: AppStore = {
-    ...store,
-    version: 2,
-    isDemo: store.isDemo || undefined,
-    rules: store.rules.filter((r) => r.source === 'user'),
-    categories: store.categories ?? cloneDefaultCategories(),
-  }
-  await writeTextFile(storePath, JSON.stringify(toSave, null, 2))
+  await writeTextFile(storePath, JSON.stringify(persistableStore(store), null, 2))
 }
 
 async function loadStoreFromViteApi(): Promise<AppStore> {
@@ -534,13 +658,7 @@ async function loadStoreFromViteApi(): Promise<AppStore> {
 }
 
 async function saveStoreToViteApi(store: AppStore): Promise<void> {
-  const toSave: AppStore = {
-    ...store,
-    version: 2,
-    isDemo: store.isDemo || undefined,
-    rules: store.rules.filter((r) => r.source === 'user'),
-    categories: store.categories ?? cloneDefaultCategories(),
-  }
+  const toSave = persistableStore(store)
   const res = await fetch('/api/store', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -582,10 +700,13 @@ export function mergeTransactions(
       }),
     ),
   )
+  const byBooking = new Map<string, string>()
   const byNativeTrId = new Set<string>()
   for (const t of existing) {
     const native = extractTradeRepublicNativeId(t.id, t.accountId)
     if (native) byNativeTrId.add(native)
+    const booking = bookingIdentityKey(t)
+    if (booking && t.origin !== 'manual') byBooking.set(booking, t.id)
   }
 
   let added = 0
@@ -600,19 +721,37 @@ export function mergeTransactions(
       purpose: tx.purpose,
     })
     const native = extractTradeRepublicNativeId(tx.id, tx.accountId)
+    const booking = bookingIdentityKey(tx)
+    const bookingMatchId = booking ? byBooking.get(booking) : undefined
 
     if (
       byId.has(tx.id) ||
       byContent.has(content) ||
-      (native !== null && byNativeTrId.has(native))
+      (native !== null && byNativeTrId.has(native)) ||
+      bookingMatchId
     ) {
       duplicates++
+      if (bookingMatchId && bookingMatchId !== tx.id) {
+        const prev = byId.get(bookingMatchId)
+        if (prev && tx.importedAt >= prev.importedAt) {
+          byId.set(bookingMatchId, {
+            ...prev,
+            counterparty: tx.counterparty,
+            purpose: tx.purpose,
+            iban: tx.iban || prev.iban,
+            type: tx.type || prev.type,
+            status: tx.status || prev.status,
+            categoryId: prev.categoryOverride ? prev.categoryId : tx.categoryId,
+          })
+        }
+      }
       continue
     }
 
     byId.set(tx.id, tx)
     byContent.add(content)
     if (native) byNativeTrId.add(native)
+    if (booking) byBooking.set(booking, tx.id)
     added++
   }
 
@@ -686,12 +825,13 @@ export function addAccountByIban(
     return { store, account: existing, error: 'This IBAN already exists.' }
   }
   const name = input.name.trim() || `DKB · ${iban.slice(-4)}`
-  const { store: next, account } = upsertAccount(store, {
+  const base = withoutSampleDataset(store)
+  const { store: next, account } = upsertAccount(base, {
     name,
     bank: (input.bank ?? 'DKB').trim() || 'DKB',
     iban,
   })
-  return { store: next, account }
+  return { store: { ...next, isDemo: false }, account }
 }
 
 /**
@@ -739,7 +879,10 @@ export type DetectedCsvFormat = ImportSource | 'unknown'
 /** Detect which known bank export a CSV text belongs to. */
 export function detectCsvFormat(text: string): DetectedCsvFormat {
   if (isTradeRepublicCsv(text)) return 'trade_republic'
-  if (isDkbCsv(text)) return 'dkb'
+  if (isGermanBankCsv(text)) {
+    const meta = extractDkbAccountMeta(text)
+    return detectBankName(text, meta) === 'DKB' ? 'dkb' : 'generic'
+  }
   return 'unknown'
 }
 
@@ -759,10 +902,11 @@ export async function peekCsvImport(file: File): Promise<{
     }
   }
   const meta = extractDkbAccountMeta(text)
+  const bank = detectBankName(text, meta)
   return {
-    format: 'dkb',
-    suggestedName: suggestAccountName(meta),
-    suggestedBank: 'DKB',
+    format: bank === 'DKB' ? 'dkb' : 'generic',
+    suggestedName: suggestAccountName(meta, bank),
+    suggestedBank: bank,
     meta,
   }
 }
@@ -772,16 +916,24 @@ export async function peekDkbImport(file: File) {
   return peekCsvImport(file)
 }
 
+export function withoutSampleDataset(store: AppStore): AppStore {
+  if (!hasUserOwnedData(store)) return emptyStore()
+  return omitDemoData(store)
+}
+
 export async function importCsvFile(
   file: File,
   store: AppStore,
 ): Promise<{ store: AppStore; result: ImportResult & { created: boolean } }> {
-  // First real CSV replaces the sample dataset entirely
-  const baseStore = store.isDemo ? emptyStore() : store
+  const baseStore = withoutSampleDataset(store)
   const text = await readFileAsText(file)
   const format: ImportSource = isTradeRepublicCsv(text)
     ? 'trade_republic'
-    : 'dkb'
+    : isGermanBankCsv(text)
+      ? detectBankName(text, extractDkbAccountMeta(text)) === 'DKB'
+        ? 'dkb'
+        : 'generic'
+      : 'generic'
 
   let bank: string
   let defaultName: string
@@ -794,8 +946,8 @@ export async function importCsvFile(
     fingerprint = 'broker:trade_republic'
   } else {
     const meta = extractDkbAccountMeta(text)
-    bank = 'DKB'
-    defaultName = suggestAccountName(meta)
+    bank = detectBankName(text, meta)
+    defaultName = suggestAccountName(meta, bank)
     iban = meta.iban
   }
 
@@ -882,8 +1034,7 @@ export function importGenericCsv(
   input: GenericImportInput,
   store: AppStore,
 ): { store: AppStore; result: ImportResult & { created: boolean } } {
-  // First real CSV replaces the sample dataset entirely
-  const baseStore = store.isDemo ? emptyStore() : store
+  const baseStore = withoutSampleDataset(store)
 
   const analysis = analyzeCsv(input.text)
   if (!analysis) throw new Error('error.unreadableCsv')
@@ -1025,6 +1176,47 @@ export function setTransactionCategory(
     : transactions
 
   return { ...store, transactions: next, rules }
+}
+
+/** Confirm AI suggestions using the same remember-merchant logic as the category picker. */
+export function applyLlmSuggestions(
+  store: AppStore,
+  suggestions: Array<{
+    id: string
+    categoryId: CategoryId
+    memberIds?: string[]
+    tx: Pick<Transaction, 'counterparty'>
+  }>,
+): AppStore {
+  let next = store
+  for (const suggestion of suggestions) {
+    const remember = Boolean(suggestion.tx.counterparty.trim())
+    next = setTransactionCategory(
+      next,
+      suggestion.id,
+      suggestion.categoryId,
+      remember,
+    )
+    const leftover = (suggestion.memberIds ?? [suggestion.id]).filter((id) => {
+      const tx = next.transactions.find((item) => item.id === id)
+      return tx != null && tx.categoryId !== suggestion.categoryId
+    })
+    if (leftover.length === 0) continue
+    const leftoverSet = new Set(leftover)
+    next = {
+      ...next,
+      transactions: next.transactions.map((tx) =>
+        leftoverSet.has(tx.id)
+          ? {
+              ...tx,
+              categoryId: suggestion.categoryId,
+              categoryOverride: true,
+            }
+          : tx,
+      ),
+    }
+  }
+  return next
 }
 
 export function addUserRule(
@@ -1280,7 +1472,7 @@ export function addManualExpense(
   const amountAbs = Math.abs(input.amount)
   if (!amountAbs || !input.month) return store
 
-  const withAccount = ensureManualAccount(store)
+  const withAccount = ensureManualAccount(withoutSampleDataset(store))
   const day = Math.min(28, Math.max(1, input.day ?? 1))
   const label = input.label.trim() || 'Rücklage'
   const now = new Date().toISOString()
@@ -1317,6 +1509,7 @@ export function addManualExpense(
 
   return {
     ...withAccount,
+    isDemo: false,
     transactions: [...created, ...withAccount.transactions].sort((a, b) =>
       b.date.localeCompare(a.date),
     ),
